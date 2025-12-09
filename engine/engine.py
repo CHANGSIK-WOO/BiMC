@@ -8,6 +8,7 @@ from utils.evaluator import AccuracyEvaluator
 from models.bimc import BiMC
 import numpy as np
 import time
+import os, json
 
 
 class Runner:
@@ -54,7 +55,8 @@ class Runner:
             'text_targets',
             'image_proto',
             'images_features',
-            'images_targets'
+            'images_targets',
+            'edge_proto',
         ]
 
         for key in keys_to_merge:
@@ -82,7 +84,14 @@ class Runner:
     def run(self):
         print(f'Start inferencing on all tasks: [0, {self.data_manager.num_tasks - 1}]')
         state_dict_list = []
+        # get dataset and trainer names
+        data_name = os.path.splitext(os.path.basename(self.cfg.DATA_CFG_PATH))[0]
+        train_name = os.path.splitext(os.path.basename(self.cfg.TRAIN_CFG_PATH))[0]
+        prefix = f"{data_name}_{train_name}"
+        print("PREFIX:", prefix)
+        print("TOTAL LEN", self.data_manager.num_tasks)
         for i in range(self.data_manager.num_tasks):
+            print(f"TASK {i}")
             self.model.eval()
 
             current_class_name = np.array(self.data_manager.class_names)[self.data_manager.class_index_in_task[i]]
@@ -109,16 +118,15 @@ class Runner:
         print('Task-wise acc:')
         for i, task_acc in enumerate(self.task_acc_list):
             print(f'task {i:2d}, acc:{task_acc}')
-
         # ===========================================
         # DG-FSCIL: Target 도메인 테스트 (TS4, TS5)
         # ===========================================
+        target_acc_dict = {}
         if self.is_dgfscil:
             print('\n' + '=' * 50)
             print('DG-FSCIL: Target Domain Evaluation')
             print('=' * 50)
 
-            target_acc_dict = {}
             for target_domain in ['clipart', 'quickdraw']:
                 print(f'\n=== Target Domain: {target_domain} ===')
                 acc = self.inference_target_domain(target_domain, merged_state_dict)
@@ -126,14 +134,48 @@ class Runner:
                 print(f'=> {target_domain} Acc: {acc["mean_acc"]:.3f}')
                 print(f'   Task-wise: {acc["task_acc"]}')
 
-            # Final summary
             print('\n' + '=' * 50)
             print('DG-FSCIL Final Results Summary')
             print('=' * 50)
-            print(f'Source domain results (TS0-TS3): {self.acc_list}')
+            print(f'Source Domain Results (TS0-TS3): {self.acc_list}')
             for domain, acc in target_acc_dict.items():
-                print(f'Target domain ({domain}): {acc["mean_acc"]:.3f}')
+                print(f'Target Domain ({domain}): {acc["mean_acc"]:.3f}')
             print('=' * 50)
+
+        # ===========================================
+        # SAVE RESULTS
+        # ===========================================
+        os.makedirs("outputs", exist_ok=True)
+
+        save_dict = {
+            "acc_list": self.acc_list,
+            "task_acc_list": self.task_acc_list
+        }
+
+        # DG-FSCIL 결과도 저장하도록 확장
+        if self.is_dgfscil:
+            save_dict["target_domain"] = {
+                domain: {
+                    "mean_acc": acc["mean_acc"],
+                    "task_acc": acc["task_acc"]
+                }
+                for domain, acc in target_acc_dict.items()
+            }
+
+        # Save JSON
+        with open(f"outputs/{prefix}.json", "w") as f:
+            json.dump(save_dict, f)
+
+        # Save TXT summary
+        with open(f"outputs/{prefix}.txt", "w") as f:
+            f.write("Source Domain Results:\n")
+            for i, task_acc in enumerate(self.task_acc_list):
+                f.write(f"task {i:2d}, acc: {task_acc}\n")
+
+            if self.is_dgfscil:
+                f.write("\nTarget Domain Results:\n")
+                for domain, acc in target_acc_dict.items():
+                    f.write(f"{domain}: mean_acc={acc['mean_acc']}, task_acc={acc['task_acc']}\n")
 
     @torch.no_grad()
     def inference_task_covariance(self, task_id, state_dict):
@@ -146,6 +188,7 @@ class Runner:
         description_proto = state_dict['description_proto']
         description_features = state_dict['description_features']
         description_targets = state_dict['description_targets']
+        edge_proto = state_dict['edge_proto']
 
         num_base_class = len(self.data_manager.class_index_in_task[0])
         num_accumulated_class = max(self.data_manager.class_index_in_task[task_id]) + 1
@@ -163,6 +206,7 @@ class Runner:
                                              description_features,
                                              description_targets,
                                              text_features,
+                                             edge_proto,
                                              beta=beta)
 
             all_logits.append(logits)

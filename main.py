@@ -84,6 +84,10 @@ def setup_cfg(dataset_cfg_file, method_cfg_file):
     # 2. From the method config file
     cfg.merge_from_file(method_cfg_file)
 
+    # add paths before freezing
+    cfg.DATA_CFG_PATH = dataset_cfg_file
+    cfg.TRAIN_CFG_PATH = method_cfg_file
+
     cfg.freeze()
     return cfg
 

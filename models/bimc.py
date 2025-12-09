@@ -3,6 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import models.clip.clip as clip
 import json
+import os
+import torchvision.utils as vutils
+import torchvision
+from tqdm import tqdm
+
 
 def load_clip_to_cpu(cfg):
     backbone_name = cfg.MODEL.BACKBONE.NAME
@@ -22,6 +27,14 @@ def load_clip_to_cpu(cfg):
     return model
 
 
+def denormalize(x):
+    mean = [0.48145466, 0.4578275, 0.40821073]
+    std = [0.26862954, 0.26130258, 0.27577711]
+    mean = torch.tensor(mean, device=x.device).view(3, 1, 1)
+    std = torch.tensor(std, device=x.device).view(3, 1, 1)
+    return x * std + mean
+
+
 class BiMC(nn.Module):
 
     def __init__(self, cfg, template, device):
@@ -34,7 +47,7 @@ class BiMC(nn.Module):
         clip_model = load_clip_to_cpu(cfg)
 
         if cfg.TRAINER.BiMC.PREC == "fp32" or cfg.TRAINER.BiMC.PREC == "amp":
-        # CLIP's default precision is fp16
+            # CLIP's default precision is fp16
             clip_model.float()
 
         clip_model.eval()
@@ -43,6 +56,13 @@ class BiMC(nn.Module):
         self.description_proto = None
         self.vision_proto = None
 
+        # EDGE
+        self.edge = False
+        self.save_imag = False
+        self.gamma = 0.4
+        if self.save_imag:
+            os.makedirs("outputs/vis/origin", exist_ok=True)
+            os.makedirs("outputs/vis/edge", exist_ok=True)
 
     @torch.no_grad()
     def inference_text_feature(self, class_names, template, cls_begin_index):
@@ -70,29 +90,37 @@ class BiMC(nn.Module):
         all_targets = torch.cat(all_targets, dim=0)
         return clip_weights, all_targets
 
-
     @torch.no_grad()
     def inference_all_img_feature(self, loader, cls_begin_index):
         all_features = []
         all_labels = []
-        for batch in loader:
+
+        # === Invariant feature collector added ===
+        all_edge_features = []
+
+        for batch in tqdm(loader, desc="Extracting image features", leave=False):
             images, labels = self.parse_batch(batch)
+
+            # ---- Original CLIP features ----
             features = self.clip_model.encode_image(images)
             features = F.normalize(features, dim=-1)
             all_features.append(features)
             all_labels.append(labels)
+
+            # ---- Invariant features (grayscale + Sobel) ----
+            if self.edge:
+                edge_feat = self._extract_edge_features(images, labels)
+                all_edge_features.append(edge_feat)
+
+        # ---- merge ----
         all_features = torch.cat(all_features, dim=0)
+        all_edge_features = torch.cat(all_edge_features, dim=0)
         all_labels = torch.cat(all_labels, dim=0)
+
         unique_labels = torch.unique(all_labels)
         print(f'all targets:{unique_labels}')
 
-        # 추가 디버깅
-        print("all_features shape:", all_features.shape)
-        print("all_features std:", all_features.std().item())
-        print("all_features abs mean:", all_features.abs().mean().item())
-        print("first feature[:5]:", all_features[0, :5])
-        print("second feature[:5]:", all_features[1, :5])
-
+        # ---- Original vision prototype ----
         prototypes = []
         for c in unique_labels:
             idx = torch.where(c == all_labels)[0]
@@ -101,8 +129,87 @@ class BiMC(nn.Module):
             prototypes.append(class_prototype)
         prototypes = torch.stack(prototypes, dim=0)
         prototypes = F.normalize(prototypes, dim=-1)
-        return all_features, all_labels, prototypes
 
+        # ---- Edge prototype ----
+        edge_prototypes = []
+        if self.edge:
+            for c in unique_labels:
+                idx = torch.where(c == all_labels)[0]
+                class_inv_features = all_edge_features[idx]
+                inv_proto = class_inv_features.mean(dim=0)
+                edge_prototypes.append(inv_proto)
+            edge_prototypes = torch.stack(edge_prototypes, dim=0)
+            edge_prototypes = F.normalize(edge_prototypes, dim=-1)
+
+        # ---- return all ----
+        return {
+            "targets": all_labels,
+            "orig_features": all_features,
+            "orig_proto": prototypes,
+            "edge_features": all_edge_features,
+            "edge_proto": edge_prototypes
+        }
+
+    @torch.no_grad()
+    def _extract_edge_features(self, images, labels):
+        """
+        Generate domain-invariant EDGE structural features using
+        Laplacian of Gaussian (LoG) edge extraction.
+        This provides stronger, noise-robust invariant cues
+        than raw Sobel edges.
+        """
+
+        # === Gaussian smoothing ===
+        # Reduces noise, makes edges invariant to texture/illumination
+        blur = torchvision.transforms.GaussianBlur(kernel_size=5, sigma=1.0)
+        img_blur = blur(images)
+
+        # Convert to grayscale
+        gray = img_blur.mean(dim=1, keepdim=True)  # (B,1,H,W)
+
+        # === Laplacian kernel ===
+        laplacian_kernel = torch.tensor(
+            [[
+                [0, 1, 0],
+                [1, -4, 1],
+                [0, 1, 0]
+            ]],
+            dtype=gray.dtype,
+            device=gray.device
+        ).unsqueeze(0)  # (1,1,3,3)
+
+        # === LoG edge ===
+        edge = F.conv2d(gray, laplacian_kernel, padding=1).abs()
+
+        # Normalize
+        max_val = edge.amax(dim=[1, 2, 3], keepdim=True).clamp(min=1e-6)
+        edge = edge / max_val
+
+        # For CLIP: 3 channels needed
+        edge_img = edge.repeat(1, 3, 1, 1)
+
+        # === Optional image saving ===
+        if self.save_imag:
+            for i in range(images.size(0)):
+                label = labels[i].item()
+
+                # Save original (denormalized)
+                vutils.save_image(
+                    denormalize(images[i]).clamp(0, 1),
+                    f"outputs/vis/origin/{label}.png"
+                )
+
+                # Save invariant LoG edge
+                vutils.save_image(
+                    edge_img[i].clamp(0, 1),
+                    f"outputs/vis/edge/{label}.png"
+                )
+
+        # === Encode with CLIP ===
+        inv_feat = self.clip_model.encode_image(edge_img)
+        inv_feat = F.normalize(inv_feat, dim=-1)
+
+        return inv_feat
 
     @torch.no_grad()
     def inference_all_description_feature(self, class_names, gpt_path, cls_begin_index):
@@ -134,7 +241,6 @@ class BiMC(nn.Module):
         mean_embeddings = F.normalize(mean_embeddings, dim=-1)
         return description_embeddings, all_targets, mean_embeddings
 
-
     def soft_calibration(self, base_protos, cur_protos):
         shift_weight = self.cfg.TRAINER.BiMC.LAMBDA_I
         tau = self.cfg.TRAINER.BiMC.TAU
@@ -147,35 +253,35 @@ class BiMC(nn.Module):
         updated_protos = (1 - shift_weight) * cur_protos + shift_weight * delta_protos
         updated_protos = F.normalize(updated_protos, dim=-1)
         return updated_protos
-    
 
     def build_task_statistics(self, class_names, loader,
-                         class_index, calibrate_novel_vision_proto=False):
-        
-            
+                              class_index, calibrate_novel_vision_proto=False):
+
         def shrink_cov(cov, alpha1=1.0, alpha2=0.0):
             diag_mean = torch.mean(torch.diagonal(cov))
             off_diag = cov.clone()
             off_diag.fill_diagonal_(0.0)
             mask = off_diag != 0.0
-            off_diag_mean = (off_diag*mask).sum() / mask.sum()
+            off_diag_mean = (off_diag * mask).sum() / mask.sum()
             iden = torch.eye(cov.shape[0]).to(cov.device)
-            cov_ = cov + (alpha1*diag_mean*iden) + (alpha2*off_diag_mean*(1-iden))
+            cov_ = cov + (alpha1 * diag_mean * iden) + (alpha2 * off_diag_mean * (1 - iden))
             return cov_
 
-
         cls_begin_index = class_index[0]
-
 
         text_features, text_targets = self.inference_text_feature(class_names, self.template, cls_begin_index)
 
         description_features, description_targets, description_proto = \
-                                  self.inference_all_description_feature(class_names=class_names, 
-                                  gpt_path=self.cfg.DATASET.GPT_PATH,
-                                  cls_begin_index=cls_begin_index)
-        
-        images_features, images_targets, images_proto = \
-                                    self.inference_all_img_feature(loader, cls_begin_index)
+            self.inference_all_description_feature(class_names=class_names,
+                                                   gpt_path=self.cfg.DATASET.GPT_PATH,
+                                                   cls_begin_index=cls_begin_index)
+
+        img_stats = self.inference_all_img_feature(loader, cls_begin_index)
+        images_targets = img_stats["targets"]
+        images_features = img_stats["orig_features"]
+        images_proto = img_stats["orig_proto"]
+        edge_features = img_stats["edge_features"]
+        edge_proto = img_stats["edge_proto"]
 
         if cls_begin_index != 0:
             if calibrate_novel_vision_proto:
@@ -184,23 +290,13 @@ class BiMC(nn.Module):
         else:
             self.base_vision_prototype = images_proto
 
-
         cov_images = torch.cov(images_features.T)
-        print("cov_images shape:", cov_images.shape)
-        print("cov_images finite:", torch.isfinite(cov_images).all())
-        print("cov_images diag mean:", torch.diagonal(cov_images).mean().item())
-
-        if not torch.isfinite(cov_images).all():
-            print("NaN or Inf in covariance:",
-                  "NaN:", torch.isnan(cov_images).sum().item(),
-                  "Inf:", torch.isinf(cov_images).sum().item())
 
         if cls_begin_index == 0:
-            cov_images = shrink_cov(cov_images, alpha1=self.cfg.TRAINER.BiMC.GAMMA_BASE) 
+            cov_images = shrink_cov(cov_images, alpha1=self.cfg.TRAINER.BiMC.GAMMA_BASE)
         else:
             cov_images = shrink_cov(cov_images, alpha1=self.cfg.TRAINER.BiMC.GAMMA_INC)
 
-        
         print('finish loading covariance')
 
         return {
@@ -209,26 +305,27 @@ class BiMC(nn.Module):
             'description_targets': description_targets,
 
             'text_features': text_features,
-            'text_targets': text_targets,           
-  
+            'text_targets': text_targets,
+
             'image_proto': images_proto,
             'images_features': images_features,
             'images_targets': images_targets,
             'cov_image': cov_images,
-            
+
             'class_index': class_index,
-            'sample_cnt': len(images_features)
+            'sample_cnt': len(images_features),
+
+            'edge_proto': edge_proto,
         }
 
-   
-
     def forward_ours(self, images, num_cls, num_base_cls,
-                           image_proto, cov_image,
-                           description_proto,
-                           description_features, description_targets,
-                           text_features,
-                           beta):
-    
+                     image_proto, cov_image,
+                     description_proto,
+                     description_features, description_targets,
+                     text_features,
+                     edge_proto,
+                     beta):
+
         def knn_similarity_scores(queries, support_features, support_labels):
             """
             Compute the similarity between each query sample and all support samples,
@@ -248,7 +345,6 @@ class BiMC(nn.Module):
                 max_scores[:, label] = torch.max(masked_scores, dim=1).values
             return max_scores
 
-
         def _mahalanobis(dist, cov_inv):
             """
             Compute the Mahalanobis distance between feature vectors and a class prototype.
@@ -257,10 +353,9 @@ class BiMC(nn.Module):
             mahal = torch.matmul(left_term, dist.T)
             return torch.diag(mahal)
 
-
         def _cov_forward(feat, proto, cov):
             """
-            Perform a forward pass computing negative Mahalanobis distance between 
+            Perform a forward pass computing negative Mahalanobis distance between
             features and each class prototype using a shared covariance matrix.
             """
             maha_dist = []
@@ -273,7 +368,6 @@ class BiMC(nn.Module):
             maha_dist = torch.stack(maha_dist)
             logits = -maha_dist.T
             return logits
-        
 
         # Normalize the image features
         img_feat = self.extract_img_feature(images)
@@ -284,15 +378,31 @@ class BiMC(nn.Module):
         else:
             lambda_t = 0.0
 
-        # Here we compute the classifier after modality calibration. 
+        # Here we compute the classifier after modality calibration.
         # Note that image_proto has already been calibrated in the `build_task_statistics` function.
-        fused_proto = beta * ((1 - lambda_t) * text_features + lambda_t * description_proto) + (1 - beta) * image_proto        
-        fused_proto = F.normalize(fused_proto, dim=-1)  
+        # --- fused prototype computation ---
+        if self.edge:
+            # edge prototype ON → 3-modality fusion
+            gamma = self.gamma
+            fused_proto = (
+                    beta * ((1 - lambda_t) * text_features + lambda_t * description_proto)
+                    + (1 - beta) * image_proto
+                    + gamma * edge_proto
+            )
+        else:
+            # edge prototype OFF → original BiMC fusion
+            fused_proto = (
+                    beta * ((1 - lambda_t) * text_features + lambda_t * description_proto)
+                    + (1 - beta) * image_proto
+            )
+
+        # normalize
+        fused_proto = F.normalize(fused_proto, dim=-1)
         logits_proto_fused = img_feat @ fused_proto.t()
         prob_fused_proto = F.softmax(logits_proto_fused, dim=-1)
 
         logits_cov = _cov_forward(img_feat, image_proto, cov_image)
-        logits_knn = knn_similarity_scores(img_feat, description_features, description_targets)    
+        logits_knn = knn_similarity_scores(img_feat, description_features, description_targets)
         prob_cov = F.softmax(logits_cov / 512, dim=-1)
         prob_knn = F.softmax(logits_knn, dim=-1)
 
@@ -310,14 +420,11 @@ class BiMC(nn.Module):
         logits = prob_fused
         return logits
 
-
-
     @torch.no_grad()
     def extract_img_feature(self, images):
         images = images.to(self.device)
         image_features = self.clip_model.encode_image(images)
         return image_features
-
 
     @torch.no_grad()
     def forward(self, images):
@@ -326,8 +433,6 @@ class BiMC(nn.Module):
         classifier = F.normalize(self.classifier_weights, dim=-1)
         logits = 100. * img_feat @ classifier.t()
         return logits
-
-
 
     def parse_batch(self, batch):
         data = batch['image']
