@@ -68,9 +68,10 @@ class BiMC(nn.Module):
 
         # EDGE
         self.edge = True
-        self.save_imag = True
+        self.inference_edge = False
+        self.save_imag = False
         self.save_class = [40, 52, 250, 285, 320]
-        self.gamma = 0.2
+        self.gamma = 0.6
 
     @torch.no_grad()
     def inference_text_feature(self, class_names, template, cls_begin_index):
@@ -402,14 +403,14 @@ class BiMC(nn.Module):
 
         if self.edge:
             gamma = self.gamma
+            if self.inference_edge:
+                # extract edge feature
+                edge_feat = self._extract_edge_features(images, labels)
+                edge_feat = F.normalize(edge_feat, dim=-1)
 
-            # extract edge feature
-            edge_feat = self._extract_edge_features(images, labels)
-            edge_feat = F.normalize(edge_feat, dim=-1)
-
-            # feature fusion
-            img_feat = (1 - gamma) * img_feat + gamma * edge_feat
-            img_feat = F.normalize(img_feat, dim=-1)
+                # feature fusion
+                img_feat = (1 - gamma) * img_feat + gamma * edge_feat
+                img_feat = F.normalize(img_feat, dim=-1)
 
             # prototype fusion
             fused_proto = (1 - gamma) * fused_proto + gamma * edge_proto
