@@ -234,6 +234,7 @@ class Runner:
         description_proto = state_dict['description_proto']
         description_features = state_dict['description_features']
         description_targets = state_dict['description_targets']
+        edge_proto = state_dict['edge_proto']
 
         num_base_class = len(self.data_manager.class_index_in_task[0])
         num_accumulated_class = self.data_manager.num_total_classes  # 345
@@ -254,7 +255,8 @@ class Runner:
                 description_features,
                 description_targets,
                 text_features,
-                beta=beta
+                edge_proto,
+                beta=beta,
             )
             all_logits.append(logits)
             all_targets.append(targets)
