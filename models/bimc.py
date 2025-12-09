@@ -26,6 +26,14 @@ def load_clip_to_cpu(cfg):
 
     return model
 
+def get_unique_path(root_dir):
+    os.makedirs(root_dir, exist_ok=True)
+    idx = 0
+    while True:
+        path = os.path.join(root_dir, f"{idx}.png")
+        if not os.path.exists(path):
+            return path, idx
+        idx += 1
 
 def denormalize(x):
     mean = [0.48145466, 0.4578275, 0.40821073]
@@ -41,6 +49,8 @@ class BiMC(nn.Module):
         super(BiMC, self).__init__()
         self.cfg = cfg
         self.device = device
+        self.task_id = 0
+        self.building = True
         print(f"Loading CLIP (backbone: {cfg.MODEL.BACKBONE.NAME})")
         print(f"Prompt template:{template}")
         self.template = template
@@ -57,12 +67,10 @@ class BiMC(nn.Module):
         self.vision_proto = None
 
         # EDGE
-        self.edge = False
-        self.save_imag = False
-        self.gamma = 0.4
-        if self.save_imag:
-            os.makedirs("outputs/vis/origin", exist_ok=True)
-            os.makedirs("outputs/vis/edge", exist_ok=True)
+        self.edge = True
+        self.save_imag = True
+        self.save_class = [40, 52, 250, 285, 320]
+        self.gamma = 0.2
 
     @torch.no_grad()
     def inference_text_feature(self, class_names, template, cls_begin_index):
@@ -197,18 +205,19 @@ class BiMC(nn.Module):
         if self.save_imag:
             for i in range(images.size(0)):
                 label = labels[i].item()
+                if label not in self.save_class:
+                    continue
 
+                vis_dir = 'vis_train' if self.building else 'vis_test'
                 # Save original (denormalized)
-                vutils.save_image(
-                    denormalize(images[i]).clamp(0, 1),
-                    f"outputs/vis/origin/{label}.png"
-                )
+                orig_path, idx = get_unique_path(f"outputs/{vis_dir}/origin/{self.task_id}/{label}")
+                if idx < 100:
+                    vutils.save_image(denormalize(images[i]).clamp(0, 1), orig_path)
 
                 # Save invariant LoG edge
-                vutils.save_image(
-                    edge_img[i].clamp(0, 1),
-                    f"outputs/vis/edge/{label}.png"
-                )
+                edge_path, idx = get_unique_path(f"outputs/{vis_dir}/edge/{self.task_id}/{label}")
+                if idx < 100:
+                    vutils.save_image(edge_img[i].clamp(0, 1), edge_path)
 
         # === Encode with CLIP ===
         inv_feat = self.clip_model.encode_image(edge_img)
@@ -323,7 +332,7 @@ class BiMC(nn.Module):
             'edge_proto': edge_proto,
         }
 
-    def forward_ours(self, images, num_cls, num_base_cls,
+    def forward_ours(self, images, labels, num_cls, num_base_cls,
                      image_proto, cov_image,
                      description_proto,
                      description_features, description_targets,
@@ -386,22 +395,28 @@ class BiMC(nn.Module):
         # Here we compute the classifier after modality calibration.
         # Note that image_proto has already been calibrated in the `build_task_statistics` function.
         # --- fused prototype computation ---
-        if self.edge:
-            # edge prototype ON → 3-modality fusion
-            gamma = self.gamma
-            fused_proto = (
-                    beta * ((1 - lambda_t) * text_features + lambda_t * description_proto)
-                    + (1 - beta) * image_proto
-                    + gamma * edge_proto
-            )
-        else:
-            # edge prototype OFF → original BiMC fusion
-            fused_proto = (
-                    beta * ((1 - lambda_t) * text_features + lambda_t * description_proto)
-                    + (1 - beta) * image_proto
-            )
+        fused_proto = (
+                beta * ((1 - lambda_t) * text_features + lambda_t * description_proto)
+                + (1 - beta) * image_proto
+        )
 
-        # normalize
+        if self.edge:
+            gamma = self.gamma
+
+            # extract edge feature
+            edge_feat = self._extract_edge_features(images, labels)
+            edge_feat = F.normalize(edge_feat, dim=-1)
+
+            # feature fusion
+            img_feat = (1 - gamma) * img_feat + gamma * edge_feat
+            img_feat = F.normalize(img_feat, dim=-1)
+
+            # prototype fusion
+            fused_proto = (1 - gamma) * fused_proto + gamma * edge_proto
+
+        # ============================================================
+
+        # normalize prototype
         fused_proto = F.normalize(fused_proto, dim=-1)
         logits_proto_fused = img_feat @ fused_proto.t()
         prob_fused_proto = F.softmax(logits_proto_fused, dim=-1)

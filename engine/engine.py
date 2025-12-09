@@ -94,27 +94,30 @@ class Runner:
         prefix = f"{data_name}_{train_name}"
         print("PREFIX:", prefix)
         print("TOTAL LEN", self.data_manager.num_tasks)
-        for i in range(self.data_manager.num_tasks):
-            print(f"TASK {i}")
+        for task_id in range(self.data_manager.num_tasks):
+            print(f"TASK {task_id}")
             self.model.eval()
+            self.model.task_id = task_id
 
-            current_class_name = np.array(self.data_manager.class_names)[self.data_manager.class_index_in_task[i]]
-            loader = self.data_manager.get_dataloader(i, source='train', mode='test', accumulate_past=False)
+            current_class_name = np.array(self.data_manager.class_names)[self.data_manager.class_index_in_task[task_id]]
+            loader = self.data_manager.get_dataloader(task_id, source='train', mode='test', accumulate_past=False)
 
+            self.model.building = True
             current_state_dict = self.model.build_task_statistics(current_class_name, loader,
-                                                                  class_index=self.data_manager.class_index_in_task[i],
+                                                                  class_index=self.data_manager.class_index_in_task[task_id],
                                                                   calibrate_novel_vision_proto=self.cfg.TRAINER.BiMC.VISION_CALIBRATION, )
+            self.model.building = False
 
             state_dict_list.append(current_state_dict)
             merged_state_dict = self.merge_dicts(state_dict_list)
 
             start_time = time.time()
-            acc = self.inference_task_covariance(i, merged_state_dict)
+            acc = self.inference_task_covariance(task_id, merged_state_dict)
             end_time = time.time()
             elapsed_time = end_time - start_time
-            print(f'+++++++++++  task {i}, time: {elapsed_time} ++++++++++++++++')
+            print(f'+++++++++++  task {task_id}, time: {elapsed_time} ++++++++++++++++')
 
-            print(f'=> Task [{i}], Acc: {acc["mean_acc"]:.3f}')
+            print(f'=> Task [{task_id}], Acc: {acc["mean_acc"]:.3f}')
             self.acc_list.append(round(acc["mean_acc"], 3))
             self.task_acc_list.append(acc['task_acc'])
 
@@ -133,6 +136,7 @@ class Runner:
 
             for target_domain in ['clipart', 'quickdraw']:
                 print(f'\n=== Target Domain: {target_domain} ===')
+                self.model.building = False
                 acc = self.inference_target_domain(target_domain, merged_state_dict)
                 target_acc_dict[target_domain] = acc
                 print(f'=> {target_domain} Acc: {acc["mean_acc"]:.3f}')
@@ -185,6 +189,7 @@ class Runner:
     def inference_task_covariance(self, task_id, state_dict):
 
         beta = self.cfg.DATASET.BETA
+        self.model.task_id = task_id
 
         image_proto = state_dict['image_proto']
         cov_image = state_dict['cov_image']
@@ -203,7 +208,7 @@ class Runner:
 
         for i, batch in enumerate(tqdm(test_loader)):
             data, targets = self.parse_batch(batch)
-            logits = self.model.forward_ours(data, num_accumulated_class, num_base_class,
+            logits = self.model.forward_ours(data, targets, num_accumulated_class, num_base_class,
                                              image_proto,
                                              cov_image,
                                              description_proto,
@@ -227,6 +232,7 @@ class Runner:
     def inference_target_domain(self, target_domain, state_dict):
         """Target 도메인(clipart/quickdraw)에서 평가"""
         beta = self.cfg.DATASET.BETA
+        self.model.task_id = target_domain
 
         image_proto = state_dict['image_proto']
         cov_image = state_dict['cov_image']
@@ -248,7 +254,7 @@ class Runner:
         for i, batch in enumerate(tqdm(test_loader, desc=f'Testing {target_domain}')):
             data, targets = self.parse_batch(batch)
             logits = self.model.forward_ours(
-                data, num_accumulated_class, num_base_class,
+                data, targets, num_accumulated_class, num_base_class,
                 image_proto,
                 cov_image,
                 description_proto,
