@@ -1678,5 +1678,740 @@
         "A zigzag which is a jagged pattern.",
         "A zigzag which looks like lightning.",
         "A zigzag which is not straight."
+    ],
+    "leaf": [
+      "A leaf which is a flat, thin part of a plant.",
+      "A leaf which is attached to a stem by a small stalk.",
+      "A leaf which has visible veins running through it.",
+      "A leaf which can change color in autumn.",
+      "A leaf which is typically green and used for photosynthesis."
+    ],
+    "flashlight": [
+      "A flashlight which is a portable hand-held light source.",
+      "A flashlight which has a cylindrical body and a lens at one end.",
+      "A flashlight which is powered by batteries.",
+      "A flashlight which is used to see in the dark.",
+      "A flashlight which often has a button or switch on the side."
+    ],
+    "ladder": [
+      "A ladder which is a climbing tool with rungs.",
+      "A ladder which leans against a wall or stands on its own.",
+      "A ladder which has two long side rails.",
+      "A ladder which is used to reach high places.",
+      "A ladder which is commonly made of metal or wood."
+    ],
+    "umbrella": [
+      "An umbrella which is a handheld device for protection from rain.",
+      "An umbrella which has a fabric canopy stretched over ribs.",
+      "An umbrella which collapses and folds when not in use.",
+      "An umbrella which is held by a central shaft and handle.",
+      "An umbrella which can also provide shade from the sun."
+    ],
+    "fork": [
+      "A fork which is an eating utensil with prongs.",
+      "A fork which is used to spear and lift food.",
+      "A fork which usually has three or four tines.",
+      "A fork which is made of metal or plastic.",
+      "A fork which is part of a table setting."
+    ],
+    "shoe": [
+      "A shoe which is a piece of footwear for the foot.",
+      "A shoe which has a sole and upper material.",
+      "A shoe which protects the foot when walking.",
+      "A shoe which is tied with laces or secured with straps.",
+      "A shoe which comes in many styles such as sneakers or boots."
+    ],
+    "panda": [
+      "A panda which is a large black-and-white bear.",
+      "A panda which has distinct dark patches around its eyes.",
+      "A panda which eats bamboo as its main food.",
+      "A panda which has a round face and stocky body.",
+      "A panda which lives in mountainous forests."
+    ],
+    "teapot": [
+      "A teapot which is a container used to brew tea.",
+      "A teapot which has a spout, handle, and lid.",
+      "A teapot which is often made of ceramic or metal.",
+      "A teapot which holds hot water and tea leaves.",
+      "A teapot which pours tea into cups."
+    ],
+    "bush": [
+      "A bush which is a low, dense shrub.",
+      "A bush which has many branches near the ground.",
+      "A bush which is covered in leaves or flowers.",
+      "A bush which can form hedges in gardens.",
+      "A bush which is shorter than a tree."
+    ],
+    "washing_machine": [
+      "A washing machine which is a household appliance for cleaning clothes.",
+      "A washing machine which has a rotating drum inside.",
+      "A washing machine which fills with water and detergent.",
+      "A washing machine which can have top or front loading.",
+      "A washing machine which spins to remove excess water."
+    ],
+    "saxophone": [
+      "A saxophone which is a brass woodwind instrument.",
+      "A saxophone which has a curved metal body.",
+      "A saxophone which is played with a single-reed mouthpiece.",
+      "A saxophone which has many keys for different notes.",
+      "A saxophone which is common in jazz and band music."
+    ],
+    "frog": [
+      "A frog which is an amphibian with long hind legs.",
+      "A frog which can leap and swim.",
+      "A frog which has bulging eyes and moist skin.",
+      "A frog which lives near ponds or wetlands.",
+      "A frog which makes croaking sounds."
+    ],
+    "police_car": [
+      "A police car which is a vehicle used by law enforcement.",
+      "A police car which has flashing lights on the roof.",
+      "A police car which is marked with badges and stripes.",
+      "A police car which carries equipment and officers.",
+      "A police car which responds to emergencies."
+    ],
+    "traffic_light": [
+      "A traffic light which is a signal device at road intersections.",
+      "A traffic light which shows red, yellow, and green lights.",
+      "A traffic light which controls the flow of vehicles.",
+      "A traffic light which hangs above or stands beside the road.",
+      "A traffic light which indicates when to stop or go."
+    ],
+    "train": [
+      "A train which is a series of connected rail vehicles.",
+      "A train which runs on tracks.",
+      "A train which carries passengers or freight.",
+      "A train which has a locomotive at the front.",
+      "A train which travels between stations."
+    ],
+    "baseball_bat": [
+      "A baseball bat which is a smooth, rounded club.",
+      "A baseball bat which is used to hit a baseball.",
+      "A baseball bat which is typically made of wood or metal.",
+      "A baseball bat which tapers from handle to barrel.",
+      "A baseball bat which is held with both hands."
+    ],
+    "stitches": [
+      "A stitches which is a series of loops of thread on fabric.",
+      "A stitches which joins pieces of cloth together.",
+      "A stitches which can form patterns in sewing.",
+      "A stitches which may refer to medical sutures on skin.",
+      "A stitches which holds materials securely in place."
+    ],
+    "stove": [
+      "A stove which is a kitchen appliance for cooking.",
+      "A stove which has burners or heating elements on top.",
+      "A stove which may also include an oven below.",
+      "A stove which is powered by gas or electricity.",
+      "A stove which is used for boiling, frying, and simmering food."
+    ],
+    "pear": [
+      "A pear which is a sweet, bell-shaped fruit.",
+      "A pear which has smooth skin in green or yellow.",
+      "A pear which has soft, juicy flesh inside.",
+      "A pear which contains small seeds in the core.",
+      "A pear which is often eaten fresh or in desserts."
+    ],
+    "arm": [
+      "An arm which is a limb extending from the shoulder.",
+      "An arm which has an upper arm, forearm, and hand.",
+      "An arm which bends at the elbow joint.",
+      "An arm which is used for lifting and reaching.",
+      "An arm which contains muscles and bones."
+    ],
+    "lobster": [
+      "A lobster which is a large marine crustacean.",
+      "A lobster which has a hard shell and long body.",
+      "A lobster which has large front claws.",
+      "A lobster which lives on the ocean floor.",
+      "A lobster which is often boiled and eaten as seafood."
+    ],
+    "snowflake": [
+      "A snowflake which is a tiny ice crystal.",
+      "A snowflake which has intricate, symmetrical patterns.",
+      "A snowflake which forms in cold clouds.",
+      "A snowflake which falls gently from the sky.",
+      "A snowflake which melts when it lands on warm surfaces."
+    ],
+    "wheel": [
+      "A wheel which is a circular object that rotates.",
+      "A wheel which is attached to a vehicle for movement.",
+      "A wheel which has a hub and rim.",
+      "A wheel which rolls along the ground.",
+      "A wheel which is often made of metal and rubber."
+    ],
+    "squirrel": [
+      "A squirrel which is a small rodent with a bushy tail.",
+      "A squirrel which climbs trees quickly.",
+      "A squirrel which gathers nuts and seeds.",
+      "A squirrel which has sharp claws.",
+      "A squirrel which is often seen in parks and forests."
+    ],
+    "popsicle": [
+      "A popsicle which is a frozen treat on a stick.",
+      "A popsicle which is made of flavored ice.",
+      "A popsicle which is held by a wooden stick.",
+      "A popsicle which melts in warm weather.",
+      "A popsicle which comes in many bright colors."
+    ],
+    "cruise_ship": [
+      "A cruise ship which is a large passenger vessel.",
+      "A cruise ship which travels on oceans for vacations.",
+      "A cruise ship which has multiple decks.",
+      "A cruise ship which contains cabins, restaurants, and pools.",
+      "A cruise ship which stops at tourist destinations."
+    ],
+    "pencil": [
+      "A pencil which is a writing instrument with a graphite core.",
+      "A pencil which is encased in wood or plastic.",
+      "A pencil which has a pointed tip sharpened for writing.",
+      "A pencil which can be erased from paper.",
+      "A pencil which is used for drawing and sketching."
+    ],
+    "trumpet": [
+      "A trumpet which is a brass musical instrument.",
+      "A trumpet which has a flared bell at the end.",
+      "A trumpet which is played by blowing into a mouthpiece.",
+      "A trumpet which has three valves on top.",
+      "A trumpet which produces bright, piercing tones."
+    ],
+    "snorkel": [
+      "A snorkel which is a breathing tube for swimming.",
+      "A snorkel which has a mouthpiece at one end.",
+      "A snorkel which extends above the water surface.",
+      "A snorkel which allows a swimmer to breathe face down.",
+      "A snorkel which is used with a mask in shallow water."
+    ],
+    "helmet": [
+      "A helmet which is protective headgear.",
+      "A helmet which covers the skull.",
+      "A helmet which is worn while riding bikes or motorcycles.",
+      "A helmet which may have straps under the chin.",
+      "A helmet which reduces injury from impacts."
+    ],
+    "rake": [
+      "A rake which is a garden tool with a long handle.",
+      "A rake which has tines or prongs at one end.",
+      "A rake which is used to gather leaves or soil.",
+      "A rake which drags across the ground.",
+      "A rake which is commonly made of metal or plastic."
+    ],
+    "feather": [
+      "A feather which is a light, flat growth on a bird.",
+      "A feather which has a central shaft and soft barbs.",
+      "A feather which helps birds fly and stay warm.",
+      "A feather which can be white, brown, or colorful.",
+      "A feather which often falls to the ground as plumage sheds."
+    ],
+    "bench": [
+      "A bench which is a long seat for multiple people.",
+      "A bench which is often found in parks or stations.",
+      "A bench which may have a backrest and armrests.",
+      "A bench which is made of wood, metal, or stone.",
+      "A bench which provides a place to rest."
+    ],
+    "remote_control": [
+      "A remote control which is a handheld device for operating electronics.",
+      "A remote control which has buttons for channel and volume.",
+      "A remote control which sends signals to a television or device.",
+      "A remote control which is powered by batteries.",
+      "A remote control which is used from a distance."
+    ],
+    "toilet": [
+      "A toilet which is a plumbing fixture for waste disposal.",
+      "A toilet which has a bowl filled with water.",
+      "A toilet which has a seat and lid.",
+      "A toilet which flushes waste through pipes.",
+      "A toilet which is installed in bathrooms."
+    ],
+    "giraffe": [
+      "A giraffe which is a tall African mammal.",
+      "A giraffe which has a very long neck.",
+      "A giraffe which has spotted fur patterns.",
+      "A giraffe which feeds on leaves high in trees.",
+      "A giraffe which walks with long, slender legs."
+    ],
+    "flower": [
+      "A flower which is the colorful part of a plant.",
+      "A flower which has petals surrounding a center.",
+      "A flower which may produce fragrance.",
+      "A flower which attracts bees and butterflies.",
+      "A flower which can be red, yellow, or many other colors."
+    ],
+    "jail": [
+      "A jail which is a secure building for holding prisoners.",
+      "A jail which has barred cells.",
+      "A jail which is guarded by officers.",
+      "A jail which confines people awaiting trial or serving sentences.",
+      "A jail which has locked doors and metal bars."
+    ],
+    "parrot": [
+      "A parrot which is a brightly colored bird.",
+      "A parrot which has a curved beak.",
+      "A parrot which can mimic human speech.",
+      "A parrot which often has red, green, or blue feathers.",
+      "A parrot which perches on branches or cages."
+    ],
+    "pants": [
+      "A pair of pants which is clothing for the lower body.",
+      "A pair of pants which has two leg sections.",
+      "A pair of pants which is fastened at the waist.",
+      "A pair of pants which may have pockets.",
+      "A pair of pants which is worn over underwear."
+    ],
+    "drill": [
+      "A drill which is a power tool used for making holes.",
+      "A drill which has a rotating bit at the front.",
+      "A drill which is held by a handle and trigger.",
+      "A drill which can be electric or battery-powered.",
+      "A drill which is used on wood, metal, or walls."
+    ],
+    "church": [
+      "A church which is a building for Christian worship.",
+      "A church which often has a steeple or bell tower.",
+      "A church which has rows of pews inside.",
+      "A church which may feature stained glass windows.",
+      "A church which is used for services and ceremonies."
+    ],
+    "flying_saucer": [
+      "A flying saucer which is a disc-shaped UFO.",
+      "A flying saucer which is often depicted as an alien spacecraft.",
+      "A flying saucer which hovers in the sky.",
+      "A flying saucer which has a domed top.",
+      "A flying saucer which emits mysterious lights."
+    ],
+    "map": [
+      "A map which is a diagram representing an area.",
+      "A map which shows roads, cities, and landmarks.",
+      "A map which is printed on paper or displayed on a screen.",
+      "A map which includes symbols and a legend.",
+      "A map which helps travelers find directions."
+    ],
+    "suitcase": [
+      "A suitcase which is a rectangular travel case.",
+      "A suitcase which holds clothes and personal items.",
+      "A suitcase which has a handle and sometimes wheels.",
+      "A suitcase which zips or latches shut.",
+      "A suitcase which is carried to airports and hotels."
+    ],
+    "carrot": [
+      "A carrot which is an orange root vegetable.",
+      "A carrot which is long and tapered.",
+      "A carrot which has leafy green tops when fresh.",
+      "A carrot which is crunchy when eaten raw.",
+      "A carrot which is often sliced for cooking."
+    ],
+    "mailbox": [
+      "A mailbox which is a container for receiving mail.",
+      "A mailbox which is mounted on a post or wall.",
+      "A mailbox which has a door or lid.",
+      "A mailbox which may have a red flag on the side.",
+      "A mailbox which holds letters and packages."
+    ],
+    "palm_tree": [
+      "A palm tree which is a tall tropical tree.",
+      "A palm tree which has a slender trunk.",
+      "A palm tree which has a crown of long fronds.",
+      "A palm tree which grows near beaches and warm climates.",
+      "A palm tree which provides shade and coconuts."
+    ],
+    "hockey_stick": [
+      "A hockey stick which is a long sports stick.",
+      "A hockey stick which has a flat, curved blade at one end.",
+      "A hockey stick which is used to hit a puck or ball.",
+      "A hockey stick which is held with both hands.",
+      "A hockey stick which is used on ice or field surfaces."
+    ],
+    "skyscraper": [
+      "A skyscraper which is a very tall building.",
+      "A skyscraper which has many floors.",
+      "A skyscraper which is made of steel and glass.",
+      "A skyscraper which dominates the city skyline.",
+      "A skyscraper which houses offices or apartments."
+    ],
+    "axe": [
+      "An axe which is a tool with a heavy blade.",
+      "An axe which is attached to a wooden handle.",
+      "An axe which is used for chopping wood.",
+      "An axe which has a sharp cutting edge.",
+      "An axe which is swung with both hands."
+    ],
+    "mountain": [
+      "A mountain which is a large natural elevation of the earth's surface.",
+      "A mountain which has a peak or summit.",
+      "A mountain which may be covered with snow.",
+      "A mountain which rises steeply above the surrounding land.",
+      "A mountain which is popular for hiking and climbing."
+    ],
+    "dragon": [
+      "A dragon which is a mythical creature.",
+      "A dragon which is often depicted with wings and scales.",
+      "A dragon which breathes fire in legends.",
+      "A dragon which has a long tail and claws.",
+      "A dragon which appears in fantasy stories."
+    ],
+    "steak": [
+      "A steak which is a thick slice of meat.",
+      "A steak which is usually beef.",
+      "A steak which is cooked by grilling or frying.",
+      "A steak which shows grill marks when cooked.",
+      "A steak which is served on a plate with sides."
+    ],
+    "chair": [
+      "A chair which is a piece of furniture for sitting.",
+      "A chair which has a seat, legs, and a backrest.",
+      "A chair which may have armrests.",
+      "A chair which is placed at a table or desk.",
+      "A chair which is made of wood, metal, or plastic."
+    ],
+    "chandelier": [
+      "A chandelier which is a decorative ceiling light fixture.",
+      "A chandelier which has multiple arms for bulbs or candles.",
+      "A chandelier which often includes glass or crystal pieces.",
+      "A chandelier which hangs from the ceiling by a chain.",
+      "A chandelier which is used in dining rooms or halls."
+    ],
+    "knife": [
+      "A knife which is a cutting tool with a sharp blade.",
+      "A knife which has a handle for gripping.",
+      "A knife which is used to slice food.",
+      "A knife which can be pointed or serrated.",
+      "A knife which is part of kitchen utensils."
+    ],
+    "floor_lamp": [
+      "A floor lamp which is a tall lighting fixture.",
+      "A floor lamp which stands on the floor.",
+      "A floor lamp which has a long pole and base.",
+      "A floor lamp which provides light to a room.",
+      "A floor lamp which may have a fabric shade."
+    ],
+    "backpack": [
+      "A backpack which is a bag carried on the back.",
+      "A backpack which has two shoulder straps.",
+      "A backpack which holds books or gear.",
+      "A backpack which zips shut to secure items.",
+      "A backpack which is used by students and hikers."
+    ],
+    "airplane": [
+      "An airplane which is a powered flying vehicle.",
+      "An airplane which has wings and a tail.",
+      "An airplane which takes off and lands on runways.",
+      "An airplane which carries passengers and cargo.",
+      "An airplane which flies high in the sky."
+    ],
+    "pool": [
+      "A pool which is a man-made body of water for swimming.",
+      "A pool which is rectangular or rounded.",
+      "A pool which is filled with clear water.",
+      "A pool which has ladders and sometimes diving boards.",
+      "A pool which is surrounded by tiles or decking."
+    ],
+    "waterslide": [
+      "A waterslide which is a slide that ends in water.",
+      "A waterslide which is found at water parks or pools.",
+      "A waterslide which has a smooth, slippery surface.",
+      "A waterslide which can be straight or twisting.",
+      "A waterslide which riders slide down while wet."
+    ],
+    "penguin": [
+      "A penguin which is a flightless seabird.",
+      "A penguin which has black and white plumage.",
+      "A penguin which waddles upright on land.",
+      "A penguin which swims using its flippers.",
+      "A penguin which lives in cold coastal regions."
+    ],
+    "table": [
+      "A table which is a flat-topped piece of furniture.",
+      "A table which stands on legs.",
+      "A table which is used for eating or working.",
+      "A table which may be rectangular or round.",
+      "A table which can hold objects on its surface."
+    ],
+    "bridge": [
+      "A bridge which is a structure built over a gap or water.",
+      "A bridge which connects two sides of a river or road.",
+      "A bridge which may be made of steel, concrete, or wood.",
+      "A bridge which has supports or cables.",
+      "A bridge which allows vehicles or people to cross."
+    ],
+    "cat": [
+      "A cat which is a small domesticated feline.",
+      "A cat which has soft fur and whiskers.",
+      "A cat which walks quietly.",
+      "A cat which often purrs when content.",
+      "A cat which can be playful or independent."
+    ],
+    "laptop": [
+      "A laptop which is a portable personal computer.",
+      "A laptop which folds with a hinge.",
+      "A laptop which has a screen and keyboard.",
+      "A laptop which runs on battery power.",
+      "A laptop which is used for work and study."
+    ],
+    "necklace": [
+      "A necklace which is a piece of jewelry worn around the neck.",
+      "A necklace which may have a chain and pendant.",
+      "A necklace which can be made of metal or beads.",
+      "A necklace which decorates the neckline.",
+      "A necklace which can be short or long."
+    ],
+    "megaphone": [
+      "A megaphone which is a cone-shaped device for amplifying voice.",
+      "A megaphone which is held up to the mouth.",
+      "A megaphone which projects sound over a distance.",
+      "A megaphone which is used at events and rallies.",
+      "A megaphone which may have a handle and trigger."
+    ],
+    "couch": [
+      "A couch which is a long upholstered seat.",
+      "A couch which is designed for multiple people.",
+      "A couch which has cushions and a backrest.",
+      "A couch which is placed in a living room.",
+      "A couch which is used for sitting or lying down."
+    ],
+    "dolphin": [
+      "A dolphin which is a highly intelligent marine mammal.",
+      "A dolphin which has a streamlined body.",
+      "A dolphin which has a dorsal fin on its back.",
+      "A dolphin which swims in groups called pods.",
+      "A dolphin which often leaps out of the water."
+    ],
+    "hamburger": [
+      "A hamburger which is a sandwich with a ground beef patty.",
+      "A hamburger which is served in a round bun.",
+      "A hamburger which may include lettuce and tomato.",
+      "A hamburger which often has cheese and condiments.",
+      "A hamburger which is a popular fast food item."
+    ],
+    "paint_can": [
+      "A paint can which is a cylindrical metal container.",
+      "A paint can which holds liquid paint.",
+      "A paint can which has a lid that seals tightly.",
+      "A paint can which is opened with a tool.",
+      "A paint can which is used for painting walls or objects."
+    ],
+    "candle": [
+      "A candle which is a stick of wax with a wick.",
+      "A candle which produces light when lit.",
+      "A candle which melts slowly as it burns.",
+      "A candle which may give off fragrance.",
+      "A candle which is used during power outages or ceremonies."
+    ],
+    "bucket": [
+      "A bucket which is a round container with a handle.",
+      "A bucket which is used to carry liquids or materials.",
+      "A bucket which is made of plastic or metal.",
+      "A bucket which has a flat bottom.",
+      "A bucket which can be filled with water or sand."
+    ],
+    "sun": [
+      "A sun which is the star at the center of our solar system.",
+      "A sun which appears as a bright circle in the sky.",
+      "A sun which provides light and warmth to Earth.",
+      "A sun which rises in the east and sets in the west.",
+      "A sun which is often drawn with rays around it."
+    ],
+    "microwave": [
+      "A microwave which is a kitchen appliance for heating food.",
+      "A microwave which has a door with a window.",
+      "A microwave which uses microwave radiation to cook.",
+      "A microwave which has control buttons on the front.",
+      "A microwave which sits on a countertop or is built-in."
+    ],
+    "piano": [
+      "A piano which is a large keyboard instrument.",
+      "A piano which has black and white keys.",
+      "A piano which produces sound by hammers striking strings.",
+      "A piano which can be upright or grand in shape.",
+      "A piano which is used for classical and modern music."
+    ],
+    "banana": [
+      "A banana which is a long, curved fruit.",
+      "A banana which has a yellow peel when ripe.",
+      "A banana which has soft, sweet flesh inside.",
+      "A banana which is peeled before eating.",
+      "A banana which grows in bunches on trees."
+    ],
+    "sandwich": [
+      "A sandwich which is food placed between slices of bread.",
+      "A sandwich which may contain meat, cheese, or vegetables.",
+      "A sandwich which is cut in halves or triangles.",
+      "A sandwich which is easy to hold in hand.",
+      "A sandwich which is commonly eaten for lunch."
+    ],
+    "coffee_cup": [
+      "A coffee cup which is a small cup for hot beverages.",
+      "A coffee cup which often has a handle.",
+      "A coffee cup which holds coffee or tea.",
+      "A coffee cup which can be ceramic or paper.",
+      "A coffee cup which may sit on a saucer."
+    ],
+    "duck": [
+      "A duck which is a water bird with webbed feet.",
+      "A duck which has a broad bill.",
+      "A duck which swims in ponds and lakes.",
+      "A duck which waddles on land.",
+      "A duck which often has colorful plumage."
+    ],
+    "potato": [
+      "A potato which is a starchy root vegetable.",
+      "A potato which has brown or red skin.",
+      "A potato which has white or yellow flesh inside.",
+      "A potato which is boiled, baked, or fried.",
+      "A potato which grows underground on a plant."
+    ],
+    "sleeping_bag": [
+      "A sleeping bag which is a padded, zippered sack for sleeping.",
+      "A sleeping bag which is used for camping.",
+      "A sleeping bag which insulates the body from cold ground.",
+      "A sleeping bag which rolls up for transport.",
+      "A sleeping bag which is lined with soft material."
+    ],
+    "key": [
+      "A key which is a small metal device for unlocking locks.",
+      "A key which has a bow and a toothed blade.",
+      "A key which fits into a lock mechanism.",
+      "A key which is carried on a keyring.",
+      "A key which turns to open doors or start cars."
+    ],
+    "skull": [
+      "A skull which is the bony structure of the head.",
+      "A skull which houses and protects the brain.",
+      "A skull which has eye sockets and jaw bones.",
+      "A skull which is often used as a symbol of danger.",
+      "A skull which is part of the human skeleton."
+    ],
+    "snowman": [
+      "A snowman which is a figure made of snow.",
+      "A snowman which is built from stacked snowballs.",
+      "A snowman which often has a carrot nose.",
+      "A snowman which may wear a hat and scarf.",
+      "A snowman which is decorated with stones or buttons."
+    ],
+    "skateboard": [
+      "A skateboard which is a small board with wheels.",
+      "A skateboard which is ridden by standing on top.",
+      "A skateboard which has trucks and four wheels underneath.",
+      "A skateboard which is used at skate parks and streets.",
+      "A skateboard which performs tricks and jumps."
+    ],
+    "tiger": [
+      "A tiger which is a large striped wild cat.",
+      "A tiger which has orange fur with black stripes.",
+      "A tiger which has sharp teeth and claws.",
+      "A tiger which stalks prey in forests and grasslands.",
+      "A tiger which is powerful and stealthy."
+    ],
+    "pizza": [
+      "A pizza which is a flat round bread topped with ingredients.",
+      "A pizza which is covered with tomato sauce and cheese.",
+      "A pizza which is baked in an oven.",
+      "A pizza which is sliced into triangular pieces.",
+      "A pizza which may include toppings like pepperoni or vegetables."
+    ],
+    "mushroom": [
+      "A mushroom which is a fungus with a stem and cap.",
+      "A mushroom which grows in damp environments.",
+      "A mushroom which may have gills under its cap.",
+      "A mushroom which can be edible or poisonous.",
+      "A mushroom which appears on forest floors or lawns."
+    ],
+    "submarine": [
+      "A submarine which is a watercraft that operates underwater.",
+      "A submarine which has a long, cylindrical shape.",
+      "A submarine which has a conning tower on top.",
+      "A submarine which is used for military or research purposes.",
+      "A submarine which can dive deep below the surface."
+    ],
+    "face": [
+      "A face which is the front part of the head.",
+      "A face which has eyes, nose, and mouth.",
+      "A face which shows emotions like happiness or anger.",
+      "A face which is used for recognition.",
+      "A face which may be framed by hair."
+    ],
+    "lantern": [
+      "A lantern which is a portable light source.",
+      "A lantern which has a protective casing around the flame or bulb.",
+      "A lantern which may have a handle or hook.",
+      "A lantern which is used outdoors at night.",
+      "A lantern which can be powered by oil, candle, or battery."
+    ],
+    "guitar": [
+      "A guitar which is a stringed musical instrument.",
+      "A guitar which has a hollow or solid body.",
+      "A guitar which has six strings.",
+      "A guitar which is played by strumming or plucking.",
+      "A guitar which is used in many music genres."
+    ],
+    "wine_bottle": [
+      "A wine bottle which is a glass container for wine.",
+      "A wine bottle which is tall with a narrow neck.",
+      "A wine bottle which is sealed with a cork or cap.",
+      "A wine bottle which is often dark green or brown.",
+      "A wine bottle which is poured into glasses."
+    ],
+    "spoon": [
+      "A spoon which is an eating utensil with a shallow bowl.",
+      "A spoon which is used for scooping liquids or soft foods.",
+      "A spoon which has a handle for holding.",
+      "A spoon which is made of metal or plastic.",
+      "A spoon which is used for soup or dessert."
+    ],
+    "ice_cream": [
+      "An ice cream which is a frozen dessert made from dairy.",
+      "An ice cream which is served in a bowl or cone.",
+      "An ice cream which comes in many flavors.",
+      "An ice cream which melts quickly in heat.",
+      "An ice cream which may have toppings like sprinkles or syrup."
+    ],
+    "bed": [
+      "A bed which is a furniture piece for sleeping.",
+      "A bed which has a mattress and frame.",
+      "A bed which may have a headboard and footboard.",
+      "A bed which is covered with sheets and blankets.",
+      "A bed which is placed in a bedroom."
+    ],
+    "clock": [
+      "A clock which is a device for showing time.",
+      "A clock which has numbers around its face.",
+      "A clock which has hands that move around.",
+      "A clock which may hang on a wall or sit on a desk.",
+      "A clock which can be analog or digital."
+    ],
+    "diving_board": [
+      "A diving board which is a springy board over a pool.",
+      "A diving board which is mounted at the poolside.",
+      "A diving board which allows swimmers to jump into water.",
+      "A diving board which is usually made of reinforced material.",
+      "A diving board which bends when someone stands on it."
+    ],
+    "spider": [
+      "A spider which is an arachnid with eight legs.",
+      "A spider which spins webs from silk.",
+      "A spider which has multiple eyes.",
+      "A spider which captures insects in its web.",
+      "A spider which can be small or large."
+    ],
+    "teddy-bear": [
+      "A teddy bear which is a soft toy in the shape of a bear.",
+      "A teddy bear which is stuffed with cotton or fiber.",
+      "A teddy bear which is often cuddly and plush.",
+      "A teddy bear which is given as a gift to children.",
+      "A teddy bear which may wear clothes or accessories."
+    ],
+    "hospital": [
+      "A hospital which is a medical facility for treating patients.",
+      "A hospital which has many rooms and wards.",
+      "A hospital which contains operating rooms and equipment.",
+      "A hospital which is staffed by doctors and nurses.",
+      "A hospital which provides emergency care and surgeries."
+    ],
+    "motorbike": [
+      "A motorbike which is a two-wheeled motor vehicle.",
+      "A motorbike which is powered by an engine.",
+      "A motorbike which is ridden by straddling the seat.",
+      "A motorbike which has handlebars for steering.",
+      "A motorbike which moves quickly on roads."
     ]
 }

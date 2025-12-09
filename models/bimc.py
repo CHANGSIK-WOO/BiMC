@@ -85,6 +85,14 @@ class BiMC(nn.Module):
         all_labels = torch.cat(all_labels, dim=0)
         unique_labels = torch.unique(all_labels)
         print(f'all targets:{unique_labels}')
+
+        # 추가 디버깅
+        print("all_features shape:", all_features.shape)
+        print("all_features std:", all_features.std().item())
+        print("all_features abs mean:", all_features.abs().mean().item())
+        print("first feature[:5]:", all_features[0, :5])
+        print("second feature[:5]:", all_features[1, :5])
+
         prototypes = []
         for c in unique_labels:
             idx = torch.where(c == all_labels)[0]
@@ -178,6 +186,14 @@ class BiMC(nn.Module):
 
 
         cov_images = torch.cov(images_features.T)
+        print("cov_images shape:", cov_images.shape)
+        print("cov_images finite:", torch.isfinite(cov_images).all())
+        print("cov_images diag mean:", torch.diagonal(cov_images).mean().item())
+
+        if not torch.isfinite(cov_images).all():
+            print("NaN or Inf in covariance:",
+                  "NaN:", torch.isnan(cov_images).sum().item(),
+                  "Inf:", torch.isinf(cov_images).sum().item())
 
         if cls_begin_index == 0:
             cov_images = shrink_cov(cov_images, alpha1=self.cfg.TRAINER.BiMC.GAMMA_BASE) 

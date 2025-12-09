@@ -181,8 +181,8 @@ class DGFSCILDataManager:
         x_train, y_train = self.full_dataset.get_domain_data(target_domain, source='train')
         x_test, y_test = self.full_dataset.get_domain_data(target_domain, source='test')
 
-        x = np.array(x_train + x_test)
-        y = np.concatenate([y_train, y_test])
+        x = np.concatenate([x_train, x_test], axis=0)
+        y = np.concatenate([y_train, y_test], axis=0)
 
         # All classes up to task_id_up_to
         class_idx = np.concatenate(self.class_index_in_task[0:task_id_up_to + 1])
