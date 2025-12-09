@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import models.clip as clip
 from datasets.data_manager import DatasetManager
-from datasets.data_manager_dgfscil import DGFSCILDataManager
 from torch.nn import functional as F
 from tqdm import tqdm
 from utils.evaluator import AccuracyEvaluator

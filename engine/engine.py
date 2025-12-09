@@ -14,7 +14,18 @@ class Runner:
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.data_manager = DatasetManager(cfg,) 
+
+        # DomainNet이면 DGFSCILDataManager 사용, 아니면 기존 DatasetManager 사용
+        if cfg.DATASET.NAME.lower() == 'domainnet':
+            from datasets.data_manager_dgfscil import DGFSCILDataManager
+            self.data_manager = DGFSCILDataManager(cfg)
+            self.is_dgfscil = True
+            print("[Runner] Using DGFSCILDataManager for DomainNet")
+        else:
+            self.data_manager = DatasetManager(cfg)
+            self.is_dgfscil = False
+            print("[Runner] Using DatasetManager")
+
         self.device = cfg.DEVICE.DEVICE_NAME
 
         self.model = BiMC(cfg, self.data_manager.template, self.device)
@@ -27,33 +38,29 @@ class Runner:
             self.is_distributed = True
         else:
             self.is_distributed = False
-            
 
         self.acc_list = []
         self.task_acc_list = []
         self.evaluator = AccuracyEvaluator(self.data_manager.class_index_in_task)
 
-
     def merge_dicts(self, dict_list):
         result = {}
 
         keys_to_merge = [
-            'description_proto', 
-            'description_features', 
+            'description_proto',
+            'description_features',
             'description_targets',
-            'text_features', 
+            'text_features',
             'text_targets',
-            'image_proto', 
-            'images_features', 
+            'image_proto',
+            'images_features',
             'images_targets'
         ]
 
         for key in keys_to_merge:
             result[key] = torch.cat([d[key] for d in dict_list], dim=0)
 
-
         weights = [len(d['class_index']) for d in dict_list]
-
 
         cov_keys = [
             'cov_image',
@@ -66,12 +73,10 @@ class Runner:
                 cov_sums[key] += d[key] * weights[i]
 
         for key in cov_keys:
-            if weight_sum > 0: 
+            if weight_sum > 0:
                 result[key] = cov_sums[key] / weight_sum
 
         return result
-
-
 
     @torch.no_grad()
     def run(self):
@@ -81,15 +86,13 @@ class Runner:
             self.model.eval()
 
             current_class_name = np.array(self.data_manager.class_names)[self.data_manager.class_index_in_task[i]]
-            loader = self.data_manager.get_dataloader(i, source='train', mode='test', accumulate_past=False)            
-
-
+            loader = self.data_manager.get_dataloader(i, source='train', mode='test', accumulate_past=False)
 
             current_state_dict = self.model.build_task_statistics(current_class_name, loader,
-                                                             class_index=self.data_manager.class_index_in_task[i], 
-                                                             calibrate_novel_vision_proto=self.cfg.TRAINER.BiMC.VISION_CALIBRATION,)
+                                                                  class_index=self.data_manager.class_index_in_task[i],
+                                                                  calibrate_novel_vision_proto=self.cfg.TRAINER.BiMC.VISION_CALIBRATION, )
 
-            state_dict_list.append(current_state_dict)            
+            state_dict_list.append(current_state_dict)
             merged_state_dict = self.merge_dicts(state_dict_list)
 
             start_time = time.time()
@@ -106,7 +109,31 @@ class Runner:
         print('Task-wise acc:')
         for i, task_acc in enumerate(self.task_acc_list):
             print(f'task {i:2d}, acc:{task_acc}')
-    
+
+        # ===========================================
+        # DG-FSCIL: Target 도메인 테스트 (TS4, TS5)
+        # ===========================================
+        if self.is_dgfscil:
+            print('\n' + '=' * 50)
+            print('DG-FSCIL: Target Domain Evaluation')
+            print('=' * 50)
+
+            target_acc_dict = {}
+            for target_domain in ['clipart', 'quickdraw']:
+                print(f'\n=== Target Domain: {target_domain} ===')
+                acc = self.inference_target_domain(target_domain, merged_state_dict)
+                target_acc_dict[target_domain] = acc
+                print(f'=> {target_domain} Acc: {acc["mean_acc"]:.3f}')
+                print(f'   Task-wise: {acc["task_acc"]}')
+
+            # Final summary
+            print('\n' + '=' * 50)
+            print('DG-FSCIL Final Results Summary')
+            print('=' * 50)
+            print(f'Source domain results (TS0-TS3): {self.acc_list}')
+            for domain, acc in target_acc_dict.items():
+                print(f'Target domain ({domain}): {acc["mean_acc"]:.3f}')
+            print('=' * 50)
 
     @torch.no_grad()
     def inference_task_covariance(self, task_id, state_dict):
@@ -122,7 +149,7 @@ class Runner:
 
         num_base_class = len(self.data_manager.class_index_in_task[0])
         num_accumulated_class = max(self.data_manager.class_index_in_task[task_id]) + 1
-        
+
         test_loader = self.data_manager.get_dataloader(task_id, source='test', mode='test')
         all_logits = []
         all_targets = []
@@ -130,13 +157,13 @@ class Runner:
         for i, batch in enumerate(tqdm(test_loader)):
             data, targets = self.parse_batch(batch)
             logits = self.model.forward_ours(data, num_accumulated_class, num_base_class,
-                                                   image_proto, 
-                                                   cov_image,
-                                                   description_proto,
-                                                   description_features, 
-                                                   description_targets,
-                                                   text_features,
-                                                   beta=beta)
+                                             image_proto,
+                                             cov_image,
+                                             description_proto,
+                                             description_features,
+                                             description_targets,
+                                             text_features,
+                                             beta=beta)
 
             all_logits.append(logits)
             all_targets.append(targets)
@@ -144,10 +171,53 @@ class Runner:
         all_logits = torch.cat(all_logits, dim=0)
         all_targets = torch.cat(all_targets, dim=0)
 
-        eval_acc = self.evaluator.calc_accuracy(all_logits, all_targets, task_id) 
+        eval_acc = self.evaluator.calc_accuracy(all_logits, all_targets, task_id)
         print(f"Test acc mean: {eval_acc['mean_acc']}, task-wise acc: {eval_acc['task_acc']}")
         return eval_acc
-    
+
+    @torch.no_grad()
+    def inference_target_domain(self, target_domain, state_dict):
+        """Target 도메인(clipart/quickdraw)에서 평가"""
+        beta = self.cfg.DATASET.BETA
+
+        image_proto = state_dict['image_proto']
+        cov_image = state_dict['cov_image']
+        text_features = state_dict['text_features']
+        description_proto = state_dict['description_proto']
+        description_features = state_dict['description_features']
+        description_targets = state_dict['description_targets']
+
+        num_base_class = len(self.data_manager.class_index_in_task[0])
+        num_accumulated_class = self.data_manager.num_total_classes  # 345
+
+        # Target 도메인 DataLoader
+        test_loader = self.data_manager.get_target_domain_dataloader(target_domain)
+
+        all_logits = []
+        all_targets = []
+
+        for i, batch in enumerate(tqdm(test_loader, desc=f'Testing {target_domain}')):
+            data, targets = self.parse_batch(batch)
+            logits = self.model.forward_ours(
+                data, num_accumulated_class, num_base_class,
+                image_proto,
+                cov_image,
+                description_proto,
+                description_features,
+                description_targets,
+                text_features,
+                beta=beta
+            )
+            all_logits.append(logits)
+            all_targets.append(targets)
+
+        all_logits = torch.cat(all_logits, dim=0)
+        all_targets = torch.cat(all_targets, dim=0)
+
+        # 마지막 태스크 기준으로 평가 (모든 345 클래스)
+        eval_acc = self.evaluator.calc_accuracy(all_logits, all_targets, self.data_manager.num_tasks - 1)
+        print(f"Target domain ({target_domain}) acc: {eval_acc['mean_acc']}, task-wise: {eval_acc['task_acc']}")
+        return eval_acc
 
     def parse_batch(self, batch):
         data = batch['image']

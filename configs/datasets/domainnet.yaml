@@ -1,12 +1,12 @@
 DATASET:
   NAME: "DomainNet"
   ROOT: "/data/datasets/"
-  GPT_PATH: "description/domainnet_prompts.json"  # 별도 생성 필요
+  GPT_PATH: "./description/domainnet_prompts.json"  # 별도 생성 필요
   NUM_CLASSES: 345
   NUM_INIT_CLS: 240
   NUM_INC_CLS: 35
   NUM_BASE_SHOT: -1   # -1 means all samples
   NUM_INC_SHOT: 5
 
-  BETA: 0.5
+  BETA: 0.65
   ENSEMBLE_ALPHA: 0.6

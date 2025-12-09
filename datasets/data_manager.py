@@ -261,9 +261,61 @@ def get_data_source(root, name):
     from .cifar100 import CIFAR100
     from .miniimagenet import MiniImagenet
     from .cub200 import CUB200
+    from .domainnet import DomainNet
     source_dict = {
         'cifar100' : CIFAR100,
         'miniimagenet' : MiniImagenet,
         'cub200': CUB200,
+        'domainnet': DomainNet,
     }
     return source_dict[name.lower()](root=root)
+
+
+# DatasetManager 클래스에 다음 메서드 추가
+
+def get_target_domain_dataloader(self, target_domain, task_id_up_to=None):
+    """
+    DG-FSCIL용: Target 도메인(clipart/quickdraw) 테스트 DataLoader
+    """
+    if task_id_up_to is None:
+        task_id_up_to = self.num_tasks - 1
+
+    # DomainNet인 경우에만 동작
+    if self.dataset_name.lower() != 'domainnet':
+        raise ValueError("get_target_domain_dataloader is only for DomainNet")
+
+    from .domainnet import DomainNet
+    full_dataset = DomainNet(root=self.root)
+
+    # Target 도메인 전체 데이터 가져오기 (train + test 합침)
+    x_train, y_train = full_dataset.get_domain_data(target_domain, source='train')
+    x_test, y_test = full_dataset.get_domain_data(target_domain, source='test')
+
+    x = np.concatenate([x_train, x_test])
+    y = np.concatenate([y_train, y_test])
+
+    # 모든 학습된 클래스
+    class_idx = np.concatenate(self.class_index_in_task[0:task_id_up_to + 1])
+
+    # 데이터 필터링
+    data, targets = self._select_data_from_class_index(x, y, class_idx, shot=None, source='test')
+
+    # class_to_task_id 매핑
+    class_to_task_id = {}
+    for idx in class_idx:
+        for i, sublist in enumerate(self.class_index_in_task):
+            if idx in sublist:
+                class_to_task_id[idx] = i
+                break
+
+    task_dataset = TaskDataset(data, targets, self.test_transform, class_to_task_id, self.class_names)
+
+    loader = DataLoader(
+        task_dataset,
+        batch_size=self.test_batchsize,
+        shuffle=False,
+        num_workers=self.num_workers,
+        drop_last=False,
+        pin_memory=True
+    )
+    return loader
