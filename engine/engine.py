@@ -60,7 +60,11 @@ class Runner:
         ]
 
         for key in keys_to_merge:
-            result[key] = torch.cat([d[key] for d in dict_list], dim=0)
+            tensors = [d[key] for d in dict_list if d[key] is not None]
+            if len(tensors) > 0:
+                result[key] = torch.cat(tensors, dim=0)
+            else:
+                result[key] = None
 
         weights = [len(d['class_index']) for d in dict_list]
 

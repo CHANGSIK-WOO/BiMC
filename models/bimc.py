@@ -114,7 +114,10 @@ class BiMC(nn.Module):
 
         # ---- merge ----
         all_features = torch.cat(all_features, dim=0)
-        all_edge_features = torch.cat(all_edge_features, dim=0)
+        if self.edge and len(all_edge_features) > 0:
+            all_edge_features = torch.cat(all_edge_features, dim=0)
+        else:
+            all_edge_features = None
         all_labels = torch.cat(all_labels, dim=0)
 
         unique_labels = torch.unique(all_labels)
@@ -131,8 +134,8 @@ class BiMC(nn.Module):
         prototypes = F.normalize(prototypes, dim=-1)
 
         # ---- Edge prototype ----
-        edge_prototypes = []
-        if self.edge:
+        if self.edge and all_edge_features is not None:
+            edge_prototypes = []
             for c in unique_labels:
                 idx = torch.where(c == all_labels)[0]
                 class_inv_features = all_edge_features[idx]
@@ -140,6 +143,8 @@ class BiMC(nn.Module):
                 edge_prototypes.append(inv_proto)
             edge_prototypes = torch.stack(edge_prototypes, dim=0)
             edge_prototypes = F.normalize(edge_prototypes, dim=-1)
+        else:
+            edge_prototypes = None
 
         # ---- return all ----
         return {
