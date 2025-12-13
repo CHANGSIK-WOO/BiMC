@@ -44,6 +44,27 @@ class Runner:
         self.task_acc_list = []
         self.evaluator = AccuracyEvaluator(self.data_manager.class_index_in_task)
 
+    def _apply_hyperparameters(self, hyperparam_dict):
+        """Apply hyperparameters to the model dynamically"""
+        print(f"Applying hyperparameters: {hyperparam_dict}")
+
+        # For edge method - sigma and edge_mix_weight
+        if 'sigma' in hyperparam_dict:
+            # Update sigma in the model (for Gaussian blur in edge extraction)
+            self.model.edge_sigma = hyperparam_dict['sigma']
+            print(f"  - Edge sigma set to {hyperparam_dict['sigma']}")
+
+        if 'edge_mix_weight' in hyperparam_dict:
+            # Update gamma (edge mixing weight)
+            if hasattr(self.model, 'gamma'):
+                self.model.gamma = hyperparam_dict['edge_mix_weight']
+                print(f"  - Edge mix weight (gamma) set to {hyperparam_dict['edge_mix_weight']}")
+
+        if 'inference_edge' in hyperparam_dict:
+            if hasattr(self.model, 'inference_edge'):
+                self.model.inference_edge = hyperparam_dict['inference_edge']
+                print(f"  - Inference edge set to {hyperparam_dict['inference_edge']}")
+
     def merge_dicts(self, dict_list):
         result = {}
 
@@ -85,7 +106,7 @@ class Runner:
         return result
 
     @torch.no_grad()
-    def run(self):
+    def run(self, hyperparam_dict=None):
         print(f'Start inferencing on all tasks: [0, {self.data_manager.num_tasks - 1}]')
         state_dict_list = []
         # get dataset and trainer names
@@ -94,6 +115,10 @@ class Runner:
         prefix = f"{data_name}_{train_name}"
         print("PREFIX:", prefix)
         print("TOTAL LEN", self.data_manager.num_tasks)
+
+        # Apply hyperparameters if provided
+        if hyperparam_dict is not None:
+            self._apply_hyperparameters(hyperparam_dict)
         for task_id in range(self.data_manager.num_tasks):
             print(f"TASK {task_id}")
             self.model.eval()
@@ -153,7 +178,9 @@ class Runner:
         # ===========================================
         # SAVE RESULTS
         # ===========================================
-        os.makedirs("outputs", exist_ok=True)
+        # Create output directory with prefix name
+        output_dir = os.path.join("outputs", prefix)
+        os.makedirs(output_dir, exist_ok=True)
 
         save_dict = {
             "acc_list": self.acc_list,
@@ -170,20 +197,23 @@ class Runner:
                 for domain, acc in target_acc_dict.items()
             }
 
+        # Add hyperparameters to save_dict if provided
+        if hyperparam_dict is not None:
+            save_dict["hyperparameters"] = hyperparam_dict
+
+        # Generate filename from hyperparameters
+        if hyperparam_dict is not None:
+            # Create filename from hyperparameter values
+            hyperparam_str = "_".join([f"{v}" for k, v in sorted(hyperparam_dict.items())])
+            filename = f"{hyperparam_str}.json"
+        else:
+            filename = "results.json"
+
         # Save JSON
-        with open(f"outputs/{prefix}.json", "w") as f:
-            json.dump(save_dict, f)
-
-        # Save TXT summary
-        with open(f"outputs/{prefix}.txt", "w") as f:
-            f.write("Source Domain Results:\n")
-            for i, task_acc in enumerate(self.task_acc_list):
-                f.write(f"task {i:2d}, acc: {task_acc}\n")
-
-            if self.is_dgfscil:
-                f.write("\nTarget Domain Results:\n")
-                for domain, acc in target_acc_dict.items():
-                    f.write(f"{domain}: mean_acc={acc['mean_acc']}, task_acc={acc['task_acc']}\n")
+        json_path = os.path.join(output_dir, filename)
+        with open(json_path, "w") as f:
+            json.dump(save_dict, f, indent=2)
+        print(f"Results saved to {json_path}")
 
     @torch.no_grad()
     def inference_task_covariance(self, task_id, state_dict):

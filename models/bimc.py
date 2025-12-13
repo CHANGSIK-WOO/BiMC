@@ -76,11 +76,13 @@ class BiMC(nn.Module):
             edge_cfg = cfg.TRAINER.BiMC.get('EDGE', {})
             self.gamma = edge_cfg.get('GAMMA', 0.5)
             self.inference_edge = edge_cfg.get('INFERENCE_EDGE', False)
-            print(f"EDGE parameters - gamma: {self.gamma}, inference_edge: {self.inference_edge}")
+            self.edge_sigma = edge_cfg.get('SIGMA', 1.0)  # Default sigma for Gaussian blur
+            print(f"EDGE parameters - gamma: {self.gamma}, sigma: {self.edge_sigma}, inference_edge: {self.inference_edge}")
         else:
             self.edge = False
             self.gamma = None
             self.inference_edge = False
+            self.edge_sigma = 1.0
 
         # Logging
         self.save_imag = False
@@ -188,7 +190,8 @@ class BiMC(nn.Module):
 
         # === Gaussian smoothing ===
         # Reduces noise, makes edges invariant to texture/illumination
-        blur = torchvision.transforms.GaussianBlur(kernel_size=5, sigma=1.0)
+        # Use dynamic sigma parameter
+        blur = torchvision.transforms.GaussianBlur(kernel_size=5, sigma=self.edge_sigma)
         img_blur = blur(images)
 
         # Convert to grayscale

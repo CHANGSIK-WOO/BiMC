@@ -106,6 +106,8 @@ def main():
 
     parser.add_argument('--data_cfg', type=str, help="Path to the data configuration file")
     parser.add_argument('--train_cfg', type=str, help="Path to the training configuration file")
+    parser.add_argument('--hyperparam_sweep', action='store_true',
+                        help="Run hyperparameter sweep for edge method")
 
     args = parser.parse_args()
 
@@ -120,8 +122,49 @@ def main():
 
     # Import and run the trainer
     from engine.engine import Runner
-    engine = Runner(cfg)
-    engine.run()
+
+    if args.hyperparam_sweep:
+        # Hyperparameter grid for edge method experiments
+        # 5x5 = 25 combinations
+        sigma_values = [0.5, 1.0, 1.5, 2.0, 2.5]
+        edge_mix_weight_values = [0.2, 0.4, 0.5, 0.6, 0.8]
+
+        print("=" * 60)
+        print("Starting Hyperparameter Sweep for Edge Method")
+        print(f"Sigma values: {sigma_values}")
+        print(f"Edge mix weight values: {edge_mix_weight_values}")
+        print(f"Total combinations: {len(sigma_values) * len(edge_mix_weight_values)}")
+        print("=" * 60)
+
+        total_runs = len(sigma_values) * len(edge_mix_weight_values)
+        current_run = 0
+
+        for sigma in sigma_values:
+            for edge_mix_weight in edge_mix_weight_values:
+                current_run += 1
+                hyperparam_dict = {
+                    'sigma': sigma,
+                    'edge_mix_weight': edge_mix_weight
+                }
+
+                print("\n" + "=" * 60)
+                print(f"Run {current_run}/{total_runs}")
+                print(f"Hyperparameters: sigma={sigma}, edge_mix_weight={edge_mix_weight}")
+                print("=" * 60 + "\n")
+
+                # Create a new engine for each run
+                engine = Runner(cfg)
+                engine.run(hyperparam_dict=hyperparam_dict)
+
+                print(f"\nCompleted run {current_run}/{total_runs}")
+
+        print("\n" + "=" * 60)
+        print("Hyperparameter sweep completed!")
+        print("=" * 60)
+    else:
+        # Single run without hyperparameter sweep
+        engine = Runner(cfg)
+        engine.run()
 
 
 if __name__ == '__main__':

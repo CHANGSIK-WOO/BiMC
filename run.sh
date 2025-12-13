@@ -13,10 +13,10 @@
 
 # Ours
 
-python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/bimc.yaml
+#python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/bimc.yaml
 
-python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/bimc_ensemble.yaml
+#python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/bimc_ensemble.yaml
 
-python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge.yaml
+python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge.yaml --hyperparam_sweep
 
-python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge_ensemble.yaml
+python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge_ensemble.yaml --hyperparam_sweep
