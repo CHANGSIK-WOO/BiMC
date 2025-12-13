@@ -73,7 +73,7 @@ class BiMC(nn.Module):
         # EDGE-specific parameters
         if self.method == 'edge':
             edge_cfg = cfg.TRAINER.BiMC.get('EDGE', {})
-            self.gamma = edge_cfg.get('GAMMA', 0.6)
+            self.gamma = edge_cfg.get('GAMMA', 0.5)
             self.inference_edge = edge_cfg.get('INFERENCE_EDGE', False)
             self.save_imag = edge_cfg.get('SAVE_IMAGE', False)
             self.save_class = edge_cfg.get('SAVE_CLASSES', [40, 52, 250, 285, 320])
@@ -441,21 +441,16 @@ class BiMC(nn.Module):
         prob_knn = F.softmax(logits_knn, dim=-1)
 
         NUM_BASE_CLS = num_base_cls
-
-        # ============================================================
-        # Ensemble strategy: bimc vs bimc_ensemble vs edge
-        # ============================================================
-        if self.method in ['bimc_ensemble', 'edge']:
-            # Use ensemble diversity
+        use_diversity = self.cfg.TRAINER.BiMC.USING_ENSEMBLE
+        if use_diversity:
             ensemble_alpha = self.cfg.DATASET.ENSEMBLE_ALPHA
-            base_probs = ensemble_alpha * prob_fused_proto[:, :NUM_BASE_CLS] + (1 - ensemble_alpha) * prob_cov[:, :NUM_BASE_CLS]
-            inc_probs = ensemble_alpha * prob_fused_proto[:, NUM_BASE_CLS:] + (1 - ensemble_alpha) * prob_knn[:, NUM_BASE_CLS:]
-            prob_fused = torch.cat([base_probs, inc_probs], dim=1)
         else:
-            # Standard BiMC: no ensemble
-            prob_fused = prob_fused_proto
-        # ============================================================
+            ensemble_alpha = 1.0
 
+        base_probs = ensemble_alpha * prob_fused_proto[:, :NUM_BASE_CLS] + (1 - ensemble_alpha) * prob_cov[:, :NUM_BASE_CLS]
+        inc_probs = ensemble_alpha * prob_fused_proto[:, NUM_BASE_CLS:] + (1 - ensemble_alpha) * prob_knn[:, NUM_BASE_CLS:]
+
+        prob_fused = torch.cat([base_probs, inc_probs], dim=1)
         logits = prob_fused
         return logits
 

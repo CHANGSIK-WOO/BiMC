@@ -13,7 +13,9 @@
 
 # Ours
 
-python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/bimc.yaml
+#python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/bimc.yaml
+#
+python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge.yaml
 
 ## CIFAR BIMC
 #python main.py --data_cfg ./configs/datasets/cifar100.yaml --train_cfg ./configs/trainers/bimc.yaml
