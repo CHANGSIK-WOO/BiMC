@@ -68,21 +68,23 @@ class BiMC(nn.Module):
 
         # Method selection: bimc, bimc_ensemble, edge
         self.method = cfg.TRAINER.BiMC.get('METHOD', 'bimc')
-        print(f"BiMC Method: {self.method}")
+        print(f"Method: {self.method}")
 
         # EDGE-specific parameters
-        if self.method == 'edge':
+        if 'edge' in self.method:
+            self.edge = True
             edge_cfg = cfg.TRAINER.BiMC.get('EDGE', {})
-            self.gamma = edge_cfg.get('GAMMA', 0.5)
+            self.gamma = edge_cfg.get('GAMMA', 0.6)
             self.inference_edge = edge_cfg.get('INFERENCE_EDGE', False)
-            self.save_imag = edge_cfg.get('SAVE_IMAGE', False)
-            self.save_class = edge_cfg.get('SAVE_CLASSES', [40, 52, 250, 285, 320])
             print(f"EDGE parameters - gamma: {self.gamma}, inference_edge: {self.inference_edge}")
         else:
+            self.edge = False
             self.gamma = None
             self.inference_edge = False
-            self.save_imag = False
-            self.save_class = []
+
+        # Logging
+        self.save_imag = False
+        self.save_class = [40, 52, 250, 285, 320]
 
     @torch.no_grad()
     def inference_text_feature(self, class_names, template, cls_begin_index):
@@ -128,13 +130,13 @@ class BiMC(nn.Module):
             all_labels.append(labels)
 
             # ---- EDGE: Invariant features (LoG edge extraction) ----
-            if self.method == 'edge':
+            if self.edge:
                 edge_feat = self._extract_edge_features(images, labels)
                 all_edge_features.append(edge_feat)
 
         # ---- merge ----
         all_features = torch.cat(all_features, dim=0)
-        if self.method == 'edge' and len(all_edge_features) > 0:
+        if self.edge and len(all_edge_features) > 0:
             all_edge_features = torch.cat(all_edge_features, dim=0)
         else:
             all_edge_features = None
@@ -154,7 +156,7 @@ class BiMC(nn.Module):
         prototypes = F.normalize(prototypes, dim=-1)
 
         # ---- EDGE: Edge prototype ----
-        if self.method == 'edge' and all_edge_features is not None:
+        if self.edge and all_edge_features is not None:
             edge_prototypes = []
             for c in unique_labels:
                 idx = torch.where(c == all_labels)[0]
@@ -415,19 +417,15 @@ class BiMC(nn.Module):
         # ============================================================
         # EDGE: Domain-invariant feature fusion
         # ============================================================
-        if self.method == 'edge':
+        if self.edge:
             gamma = self.gamma
-
-            # Feature-level fusion (optional during inference)
             if self.inference_edge:
                 edge_feat = self._extract_edge_features(images, labels)
                 edge_feat = F.normalize(edge_feat, dim=-1)
                 img_feat = (1 - gamma) * img_feat + gamma * edge_feat
                 img_feat = F.normalize(img_feat, dim=-1)
 
-            # Prototype-level fusion (always)
-            if edge_proto is not None:
-                fused_proto = (1 - gamma) * fused_proto + gamma * edge_proto
+            fused_proto = (1 - gamma) * fused_proto + gamma * edge_proto
         # ============================================================
 
         # normalize prototype

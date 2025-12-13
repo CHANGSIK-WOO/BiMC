@@ -21,7 +21,7 @@ MODEL:
 TRAINER:
   BiMC:
     METHOD: "edge"  # bimc, bimc_ensemble, edge
-    PREC: "fp16"  # fp16, fp32, amp
+    PREC: "fp32"  # fp16, fp32, amp
 
     VISION_CALIBRATION: True
     LAMBDA_I: 0.1
@@ -41,4 +41,4 @@ TRAINER:
       SAVE_CLASSES: [40, 52, 250, 285, 320]  # Classes to save visualizations for
 
     # EDGE always uses ensemble (same condition as bimc_ensemble baseline)
-    USING_ENSEMBLE: True
+    USING_ENSEMBLE: False

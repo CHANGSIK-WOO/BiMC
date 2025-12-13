@@ -13,24 +13,10 @@
 
 # Ours
 
-#python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/bimc.yaml
-#
+python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/bimc.yaml
+
+python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/bimc_ensemble.yaml
+
 python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge.yaml
 
-## CIFAR BIMC
-#python main.py --data_cfg ./configs/datasets/cifar100.yaml --train_cfg ./configs/trainers/bimc.yaml
-#
-## CIFAR BIMC_Ensemble
-#python main.py --data_cfg ./configs/datasets/cifar100.yaml --train_cfg ./configs/trainers/bimc_ensemble.yaml
-#
-## MiniImagenet BIMC
-#python main.py --data_cfg ./configs/datasets/miniimagenet.yaml --train_cfg ./configs/trainers/bimc.yaml
-#
-## MiniImagenet BIMC_Ensemble
-#python main.py --data_cfg ./configs/datasets/miniimagenet.yaml --train_cfg ./configs/trainers/bimc_ensemble.yaml
-#
-## CUB200 BIMC
-#python main.py --data_cfg ./configs/datasets/cub200.yaml --train_cfg ./configs/trainers/bimc.yaml
-#
-## CUB200 BIMC_Ensemble
-#python main.py --data_cfg ./configs/datasets/cub200.yaml --train_cfg ./configs/trainers/bimc_ensemble.yaml
+python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge_ensemble.yaml
