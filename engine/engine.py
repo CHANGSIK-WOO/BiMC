@@ -3,6 +3,7 @@ import torch.nn as nn
 import models.clip as clip
 from datasets.data_manager import DatasetManager
 from torch.nn import functional as F
+from PIL import Image
 from tqdm import tqdm
 from utils.evaluator import AccuracyEvaluator
 from models.bimc import BiMC
@@ -314,7 +315,7 @@ class MetaRunner:
         ])
 
         # Initialize BiMC model
-        self.model = BiMC(cfg, self.meta_manager.template, self.device)
+        self.model = BiMC(cfg, self.meta_manager.dataset.template, self.device)
 
         # Meta-learning configuration
         self.meta_cfg = cfg.TRAINER.BiMC.META
