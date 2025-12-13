@@ -7,6 +7,7 @@ import os
 import torchvision.utils as vutils
 import torchvision
 from tqdm import tqdm
+import copy
 
 
 def load_clip_to_cpu(cfg):
@@ -41,6 +42,42 @@ def denormalize(x):
     mean = torch.tensor(mean, device=x.device).view(3, 1, 1)
     std = torch.tensor(std, device=x.device).view(3, 1, 1)
     return x * std + mean
+
+
+class MetaEdgeParams(nn.Module):
+    """
+    Learnable parameters for edge feature extraction.
+    Used in meta-learning to find domain-invariant edge filter hyperparameters.
+    """
+    def __init__(self, initial_sigma=1.0, initial_gamma=0.5):
+        super(MetaEdgeParams, self).__init__()
+        # Gaussian blur strength (log-space for stability)
+        self.log_sigma = nn.Parameter(torch.log(torch.tensor(initial_sigma)))
+
+        # Laplacian kernel weights (initialize with standard Laplacian)
+        self.laplacian_weights = nn.Parameter(torch.tensor([
+            [0.0, 1.0, 0.0],
+            [1.0, -4.0, 1.0],
+            [0.0, 1.0, 0.0]
+        ]))
+
+        # Edge-original fusion weight
+        self.gamma = nn.Parameter(torch.tensor(initial_gamma))
+
+    def get_sigma(self):
+        """Get sigma value (ensuring positive via exp)"""
+        return torch.exp(self.log_sigma).clamp(min=0.1, max=5.0)
+
+    def get_laplacian_kernel(self):
+        """Get normalized Laplacian kernel"""
+        # Ensure center weight is negative
+        kernel = self.laplacian_weights.clone()
+        kernel[1, 1] = -kernel[1, 1].abs()
+        return kernel
+
+    def get_gamma(self):
+        """Get gamma value (clamped to [0, 1])"""
+        return torch.sigmoid(self.gamma)
 
 
 class BiMC(nn.Module):
@@ -85,6 +122,16 @@ class BiMC(nn.Module):
         # Logging
         self.save_imag = False
         self.save_class = [40, 52, 250, 285, 320]
+
+        # Meta-learning parameters
+        self.meta_learning = cfg.TRAINER.BiMC.get('META_LEARNING', False)
+        self.meta_params = None
+        if self.meta_learning and self.edge:
+            print("Meta-learning enabled: Initializing learnable edge parameters")
+            initial_sigma = edge_cfg.get('SIGMA', 1.0)
+            initial_gamma = edge_cfg.get('GAMMA', 0.5)
+            self.meta_params = MetaEdgeParams(initial_sigma, initial_gamma).to(self.device)
+            print(f"Meta params - initial sigma: {initial_sigma}, initial gamma: {initial_gamma}")
 
     @torch.no_grad()
     def inference_text_feature(self, class_names, template, cls_begin_index):
@@ -472,3 +519,159 @@ class BiMC(nn.Module):
         data = data.to(self.device)
         targets = targets.to(self.device)
         return data, targets
+
+    # ============================================================
+    # Meta-learning methods
+    # ============================================================
+
+    def _extract_edge_features_with_params(self, images, labels, meta_params):
+        """
+        Extract edge features using custom meta-learned parameters.
+        Used during meta-training to adapt edge filters.
+        """
+        # Get learnable parameters
+        sigma = meta_params.get_sigma()
+        laplacian_kernel = meta_params.get_laplacian_kernel()
+
+        # === Gaussian smoothing with learnable sigma ===
+        blur = torchvision.transforms.GaussianBlur(kernel_size=5, sigma=sigma.item())
+        img_blur = blur(images)
+
+        # Convert to grayscale
+        gray = img_blur.mean(dim=1, keepdim=True)  # (B,1,H,W)
+
+        # === Laplacian with learnable kernel ===
+        kernel = laplacian_kernel.unsqueeze(0).unsqueeze(0)  # (1,1,3,3)
+        kernel = kernel.to(dtype=gray.dtype, device=gray.device)
+        edge = F.conv2d(gray, kernel, padding=1).abs()
+
+        # Normalize
+        max_val = edge.amax(dim=[1, 2, 3], keepdim=True).clamp(min=1e-6)
+        edge = edge / max_val
+
+        # For CLIP: 3 channels needed
+        edge_img = edge.repeat(1, 3, 1, 1)
+
+        # === Encode with CLIP ===
+        inv_feat = self.clip_model.encode_image(edge_img)
+        inv_feat = F.normalize(inv_feat, dim=-1)
+
+        return inv_feat
+
+    def compute_prototypes(self, features, labels):
+        """
+        Compute class prototypes from features and labels.
+        """
+        unique_labels = torch.unique(labels)
+        prototypes = []
+        for c in unique_labels:
+            idx = torch.where(c == labels)[0]
+            class_features = features[idx]
+            class_prototype = class_features.mean(dim=0)
+            prototypes.append(class_prototype)
+        prototypes = torch.stack(prototypes, dim=0)
+        prototypes = F.normalize(prototypes, dim=-1)
+        return prototypes
+
+    def meta_forward(self, support_images, support_labels, query_images, meta_params):
+        """
+        Forward pass for meta-learning.
+        Computes prototypes from support set and classifies query set.
+
+        Args:
+            support_images: Support set images
+            support_labels: Support set labels
+            query_images: Query set images
+            meta_params: MetaEdgeParams with learnable parameters
+
+        Returns:
+            logits: Query set predictions
+            query_edge_features: Edge features for query images
+            support_edge_proto: Edge prototypes from support set
+        """
+        # Extract original CLIP features
+        with torch.no_grad():
+            support_feat = self.clip_model.encode_image(support_images)
+            support_feat = F.normalize(support_feat, dim=-1)
+
+            query_feat = self.clip_model.encode_image(query_images)
+            query_feat = F.normalize(query_feat, dim=-1)
+
+        # Extract edge features with learnable parameters
+        support_edge_feat = self._extract_edge_features_with_params(
+            support_images, support_labels, meta_params
+        )
+        query_edge_feat = self._extract_edge_features_with_params(
+            query_images, None, meta_params
+        )
+
+        # Compute prototypes from support set
+        orig_proto = self.compute_prototypes(support_feat, support_labels)
+        edge_proto = self.compute_prototypes(support_edge_feat, support_labels)
+
+        # Get learnable gamma
+        gamma = meta_params.get_gamma()
+
+        # Fuse prototypes
+        fused_proto = (1 - gamma) * orig_proto + gamma * edge_proto
+        fused_proto = F.normalize(fused_proto, dim=-1)
+
+        # Fuse query features
+        query_fused = (1 - gamma) * query_feat + gamma * query_edge_feat
+        query_fused = F.normalize(query_fused, dim=-1)
+
+        # Compute logits
+        logits = query_fused @ fused_proto.t() * 100.0
+
+        return logits, query_edge_feat, edge_proto
+
+    def meta_train_step(self, support_images, support_labels, query_images, query_labels,
+                        meta_params, inner_lr, inner_steps):
+        """
+        Single meta-training step (MAML-style).
+
+        Args:
+            support_images: Support set images
+            support_labels: Support set labels
+            query_images: Query set images
+            query_labels: Query set labels
+            meta_params: Current meta parameters
+            inner_lr: Inner loop learning rate
+            inner_steps: Number of inner loop steps
+
+        Returns:
+            query_loss: Loss on query set after adaptation
+            query_acc: Accuracy on query set after adaptation
+        """
+        # Clone parameters for task-specific adaptation
+        adapted_params = copy.deepcopy(meta_params)
+
+        # Inner loop: Adapt to support set
+        for _ in range(inner_steps):
+            logits, _, _ = self.meta_forward(
+                support_images, support_labels, support_images, adapted_params
+            )
+
+            # Support loss
+            support_loss = F.cross_entropy(logits, support_labels)
+
+            # Compute gradients and update adapted parameters
+            grads = torch.autograd.grad(
+                support_loss, adapted_params.parameters(),
+                create_graph=True, allow_unused=True
+            )
+
+            with torch.no_grad():
+                for param, grad in zip(adapted_params.parameters(), grads):
+                    if grad is not None:
+                        param.data = param.data - inner_lr * grad
+
+        # Outer loop: Evaluate on query set with adapted parameters
+        query_logits, _, _ = self.meta_forward(
+            support_images, support_labels, query_images, adapted_params
+        )
+
+        query_loss = F.cross_entropy(query_logits, query_labels)
+        query_acc = (query_logits.argmax(dim=1) == query_labels).float().mean()
+
+        return query_loss, query_acc

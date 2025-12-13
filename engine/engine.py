@@ -281,3 +281,254 @@ class Runner:
         data = data.to(self.device)
         targets = targets.to(self.device)
         return data, targets
+
+
+class MetaRunner:
+    """
+    Meta-learning runner for learning domain-invariant edge filter hyperparameters.
+    Implements 2-stage meta-learning:
+    - Stage 1: Class-level meta-learning on Real domain
+    - Stage 2: Cross-domain meta-learning with LODO strategy
+    """
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.device = cfg.DEVICE.DEVICE_NAME
+
+        # Load DomainNet dataset
+        from datasets.domainnet import DomainNet, MetaDatasetManager
+        from torchvision import transforms
+        from PIL import Image
+
+        self.domainnet = DomainNet(root=cfg.DATASET.ROOT, seed=cfg.SEED)
+        self.meta_manager = MetaDatasetManager(self.domainnet, cfg)
+
+        # Data preprocessing
+        self.preprocess = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.48145466, 0.4578275, 0.40821073],
+                std=[0.26862954, 0.26130258, 0.27577711]
+            )
+        ])
+
+        # Initialize BiMC model
+        self.model = BiMC(cfg, self.meta_manager.template, self.device)
+
+        # Meta-learning configuration
+        self.meta_cfg = cfg.TRAINER.BiMC.META
+        self.inner_lr = self.meta_cfg.INNER_LR
+        self.meta_lr = self.meta_cfg.META_LR
+        self.inner_steps = self.meta_cfg.INNER_STEPS
+
+        # Meta optimizer
+        if self.model.meta_params is not None:
+            self.meta_optimizer = torch.optim.Adam(
+                self.model.meta_params.parameters(),
+                lr=self.meta_lr
+            )
+        else:
+            raise ValueError("Meta-learning is enabled but meta_params is None. Check BiMC initialization.")
+
+        print(f"MetaRunner initialized")
+        print(f"Inner LR: {self.inner_lr}, Meta LR: {self.meta_lr}, Inner steps: {self.inner_steps}")
+
+    def load_episode_images(self, image_paths):
+        """Load images from paths and preprocess them."""
+        images = []
+        for path in image_paths:
+            img = Image.open(path).convert('RGB')
+            img_tensor = self.preprocess(img)
+            images.append(img_tensor)
+        return torch.stack(images).to(self.device)
+
+    def meta_train_stage1(self):
+        """
+        Stage 1: Class-level meta-learning on Real domain.
+        Learn class-robust edge filter initialization from 240 base classes.
+        """
+        print("\n" + "="*80)
+        print("Stage 1: Class-level Meta-Learning on Real Domain")
+        print("="*80)
+
+        episode_generator = self.meta_manager.get_stage1_episode_generator()
+
+        total_loss = 0.0
+        total_acc = 0.0
+
+        for episode in tqdm(episode_generator, total=self.meta_cfg.STAGE1_EPISODES, desc="Stage 1"):
+            # Load episode data
+            support_images = self.load_episode_images(episode['support_images'])
+            support_labels = torch.from_numpy(episode['support_labels']).to(self.device)
+            query_images = self.load_episode_images(episode['query_images'])
+            query_labels = torch.from_numpy(episode['query_labels']).to(self.device)
+
+            # Meta-training step
+            self.meta_optimizer.zero_grad()
+
+            query_loss, query_acc = self.model.meta_train_step(
+                support_images, support_labels,
+                query_images, query_labels,
+                self.model.meta_params,
+                self.inner_lr,
+                self.inner_steps
+            )
+
+            # Meta-update
+            query_loss.backward()
+            self.meta_optimizer.step()
+
+            total_loss += query_loss.item()
+            total_acc += query_acc.item()
+
+            # Log every 100 episodes
+            if (episode['episode_idx'] + 1) % 100 == 0:
+                avg_loss = total_loss / (episode['episode_idx'] + 1)
+                avg_acc = total_acc / (episode['episode_idx'] + 1)
+                print(f"Episode {episode['episode_idx'] + 1}/{self.meta_cfg.STAGE1_EPISODES} - "
+                      f"Loss: {avg_loss:.4f}, Acc: {avg_acc:.4f}")
+
+        avg_loss = total_loss / self.meta_cfg.STAGE1_EPISODES
+        avg_acc = total_acc / self.meta_cfg.STAGE1_EPISODES
+
+        print(f"\nStage 1 Complete - Avg Loss: {avg_loss:.4f}, Avg Acc: {avg_acc:.4f}")
+        print(f"Learned parameters:")
+        print(f"  Sigma: {self.model.meta_params.get_sigma().item():.4f}")
+        print(f"  Gamma: {self.model.meta_params.get_gamma().item():.4f}")
+        print(f"  Laplacian kernel:\n{self.model.meta_params.get_laplacian_kernel()}")
+
+        # Save Stage 1 checkpoint
+        self.save_meta_params('stage1_meta_params.pth')
+
+        return {'loss': avg_loss, 'acc': avg_acc}
+
+    def meta_train_stage2(self):
+        """
+        Stage 2: Cross-domain meta-learning with Leave-One-Domain-Out.
+        Learn domain-invariant edge filters using incremental classes.
+        """
+        print("\n" + "="*80)
+        print("Stage 2: Cross-Domain Meta-Learning with LODO")
+        print("="*80)
+
+        episode_generator = self.meta_manager.get_stage2_episode_generator()
+
+        total_loss = 0.0
+        total_acc = 0.0
+        domain_stats = {domain: {'loss': 0.0, 'acc': 0.0, 'count': 0}
+                       for domain in self.meta_manager.source_domains}
+
+        for episode in tqdm(episode_generator, total=self.meta_cfg.STAGE2_EPISODES, desc="Stage 2"):
+            # Load episode data
+            support_images = self.load_episode_images(episode['support_images'])
+            support_labels = torch.from_numpy(episode['support_labels']).to(self.device)
+            query_images = self.load_episode_images(episode['query_images'])
+            query_labels = torch.from_numpy(episode['query_labels']).to(self.device)
+
+            # Meta-training step
+            self.meta_optimizer.zero_grad()
+
+            query_loss, query_acc = self.model.meta_train_step(
+                support_images, support_labels,
+                query_images, query_labels,
+                self.model.meta_params,
+                self.inner_lr,
+                self.inner_steps
+            )
+
+            # Meta-update
+            query_loss.backward()
+            self.meta_optimizer.step()
+
+            total_loss += query_loss.item()
+            total_acc += query_acc.item()
+
+            # Track per-domain statistics
+            query_domain = episode['query_domain']
+            domain_stats[query_domain]['loss'] += query_loss.item()
+            domain_stats[query_domain]['acc'] += query_acc.item()
+            domain_stats[query_domain]['count'] += 1
+
+            # Log every 100 episodes
+            if (episode['episode_idx'] + 1) % 100 == 0:
+                avg_loss = total_loss / (episode['episode_idx'] + 1)
+                avg_acc = total_acc / (episode['episode_idx'] + 1)
+                print(f"Episode {episode['episode_idx'] + 1}/{self.meta_cfg.STAGE2_EPISODES} - "
+                      f"Loss: {avg_loss:.4f}, Acc: {avg_acc:.4f}, Query: {query_domain}")
+
+        avg_loss = total_loss / self.meta_cfg.STAGE2_EPISODES
+        avg_acc = total_acc / self.meta_cfg.STAGE2_EPISODES
+
+        print(f"\nStage 2 Complete - Avg Loss: {avg_loss:.4f}, Avg Acc: {avg_acc:.4f}")
+        print(f"\nPer-domain statistics:")
+        for domain in self.meta_manager.source_domains:
+            if domain_stats[domain]['count'] > 0:
+                d_loss = domain_stats[domain]['loss'] / domain_stats[domain]['count']
+                d_acc = domain_stats[domain]['acc'] / domain_stats[domain]['count']
+                print(f"  {domain}: Loss {d_loss:.4f}, Acc {d_acc:.4f} ({domain_stats[domain]['count']} episodes)")
+
+        print(f"\nFinal learned parameters:")
+        print(f"  Sigma: {self.model.meta_params.get_sigma().item():.4f}")
+        print(f"  Gamma: {self.model.meta_params.get_gamma().item():.4f}")
+        print(f"  Laplacian kernel:\n{self.model.meta_params.get_laplacian_kernel()}")
+
+        # Save Stage 2 checkpoint
+        self.save_meta_params('stage2_meta_params.pth')
+
+        return {'loss': avg_loss, 'acc': avg_acc, 'domain_stats': domain_stats}
+
+    def save_meta_params(self, filename):
+        """Save meta-learned parameters."""
+        save_path = os.path.join('outputs', 'meta_params', filename)
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+        torch.save({
+            'meta_params_state_dict': self.model.meta_params.state_dict(),
+            'sigma': self.model.meta_params.get_sigma().item(),
+            'gamma': self.model.meta_params.get_gamma().item(),
+            'laplacian_kernel': self.model.meta_params.get_laplacian_kernel().cpu().numpy(),
+        }, save_path)
+
+        print(f"Meta parameters saved to {save_path}")
+
+    def load_meta_params(self, filename):
+        """Load meta-learned parameters."""
+        load_path = os.path.join('outputs', 'meta_params', filename)
+
+        if not os.path.exists(load_path):
+            print(f"Warning: Meta params file {load_path} not found")
+            return False
+
+        checkpoint = torch.load(load_path, map_location=self.device)
+        self.model.meta_params.load_state_dict(checkpoint['meta_params_state_dict'])
+
+        print(f"Meta parameters loaded from {load_path}")
+        print(f"  Sigma: {checkpoint['sigma']:.4f}")
+        print(f"  Gamma: {checkpoint['gamma']:.4f}")
+
+        return True
+
+    def run(self):
+        """
+        Run complete meta-learning pipeline:
+        1. Stage 1: Class-level meta-learning on Real domain
+        2. Stage 2: Cross-domain meta-learning with LODO
+        """
+        print("\n" + "="*80)
+        print("Meta-Learning for Domain-Invariant Edge Filters")
+        print("="*80)
+
+        # Stage 1
+        stage1_results = self.meta_train_stage1()
+
+        # Stage 2 (initialized from Stage 1)
+        stage2_results = self.meta_train_stage2()
+
+        print("\n" + "="*80)
+        print("Meta-Learning Complete")
+        print("="*80)
+        print(f"Stage 1 - Loss: {stage1_results['loss']:.4f}, Acc: {stage1_results['acc']:.4f}")
+        print(f"Stage 2 - Loss: {stage2_results['loss']:.4f}, Acc: {stage2_results['acc']:.4f}")
+
+        return stage1_results, stage2_results
