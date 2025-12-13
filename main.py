@@ -74,26 +74,9 @@ def extend_cfg(cfg):
     # EDGE-specific config
     cfg.TRAINER.BiMC.EDGE = CN()
     cfg.TRAINER.BiMC.EDGE.GAMMA = 0.6
-    cfg.TRAINER.BiMC.EDGE.SIGMA = 1.0
     cfg.TRAINER.BiMC.EDGE.INFERENCE_EDGE = False
     cfg.TRAINER.BiMC.EDGE.SAVE_IMAGE = False
     cfg.TRAINER.BiMC.EDGE.SAVE_CLASSES = []
-
-    # Meta-learning config
-    cfg.TRAINER.BiMC.META_LEARNING = False
-    cfg.TRAINER.BiMC.META = CN()
-    cfg.TRAINER.BiMC.META.STAGE1_EPISODES = 1000
-    cfg.TRAINER.BiMC.META.STAGE1_N_WAY = 5
-    cfg.TRAINER.BiMC.META.STAGE1_K_SHOT = 5
-    cfg.TRAINER.BiMC.META.STAGE1_QUERY = 15
-    cfg.TRAINER.BiMC.META.STAGE2_EPISODES = 500
-    cfg.TRAINER.BiMC.META.STAGE2_N_WAY = 5
-    cfg.TRAINER.BiMC.META.STAGE2_K_SHOT = 5
-    cfg.TRAINER.BiMC.META.STAGE2_QUERY = 15
-    cfg.TRAINER.BiMC.META.INNER_LR = 0.01
-    cfg.TRAINER.BiMC.META.META_LR = 0.001
-    cfg.TRAINER.BiMC.META.INNER_STEPS = 5
-    cfg.TRAINER.BiMC.META.FIRST_ORDER = False
 
 
 
@@ -135,21 +118,10 @@ def main():
     set_seed(cfg.SEED)
     set_gpu(cfg.DEVICE.GPU_ID)
 
-    # Check if meta-learning is enabled
-    if cfg.TRAINER.BiMC.META_LEARNING:
-        print("\n" + "="*80)
-        print("Meta-Learning Mode Enabled")
-        print("="*80)
-        from engine.engine import MetaRunner
-        engine = MetaRunner(cfg)
-        engine.run()
-    else:
-        print("\n" + "="*80)
-        print("Standard Training Mode")
-        print("="*80)
-        from engine.engine import Runner
-        engine = Runner(cfg)
-        engine.run()
+    # Import and run the trainer
+    from engine.engine import Runner
+    engine = Runner(cfg)
+    engine.run()
 
 
 if __name__ == '__main__':
