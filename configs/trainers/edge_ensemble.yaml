@@ -35,10 +35,8 @@ TRAINER:
 
     # EDGE specific parameters
     EDGE:
-      GAMMA: 0.6  # Edge feature fusion weight
+      GAMMA: 0.5  # Edge feature fusion weight
       INFERENCE_EDGE: False  # Extract edge features during inference
-      SAVE_IMAGE: False  # Save visualization images
-      SAVE_CLASSES: [40, 52, 250, 285, 320]  # Classes to save visualizations for
 
     # EDGE always uses ensemble (same condition as bimc_ensemble baseline)
     USING_ENSEMBLE: True

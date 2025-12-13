@@ -74,7 +74,7 @@ class BiMC(nn.Module):
         if 'edge' in self.method:
             self.edge = True
             edge_cfg = cfg.TRAINER.BiMC.get('EDGE', {})
-            self.gamma = edge_cfg.get('GAMMA', 0.6)
+            self.gamma = edge_cfg.get('GAMMA', 0.5)
             self.inference_edge = edge_cfg.get('INFERENCE_EDGE', False)
             print(f"EDGE parameters - gamma: {self.gamma}, inference_edge: {self.inference_edge}")
         else:
