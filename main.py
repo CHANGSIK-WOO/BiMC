@@ -60,6 +60,7 @@ def extend_cfg(cfg):
     # For methods
     cfg.TRAINER = CN()
     cfg.TRAINER.BiMC = CN()
+    cfg.TRAINER.BiMC.METHOD = 'bimc'  # bimc, bimc_ensemble, edge
     cfg.TRAINER.BiMC.PREC = ''
     cfg.TRAINER.BiMC.VISION_CALIBRATION = False
     cfg.TRAINER.BiMC.LAMBDA_I = -1.0
@@ -69,6 +70,13 @@ def extend_cfg(cfg):
     cfg.TRAINER.BiMC.GAMMA_BASE = -1.0
     cfg.TRAINER.BiMC.GAMMA_INC = -1.0
     cfg.TRAINER.BiMC.USING_ENSEMBLE = False
+
+    # EDGE-specific config
+    cfg.TRAINER.BiMC.EDGE = CN()
+    cfg.TRAINER.BiMC.EDGE.GAMMA = 0.6
+    cfg.TRAINER.BiMC.EDGE.INFERENCE_EDGE = False
+    cfg.TRAINER.BiMC.EDGE.SAVE_IMAGE = False
+    cfg.TRAINER.BiMC.EDGE.SAVE_CLASSES = []
 
 
 

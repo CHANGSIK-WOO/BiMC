@@ -66,12 +66,23 @@ class BiMC(nn.Module):
         self.description_proto = None
         self.vision_proto = None
 
-        # EDGE
-        self.edge = True
-        self.inference_edge = False
-        self.save_imag = False
-        self.save_class = [40, 52, 250, 285, 320]
-        self.gamma = 0.6
+        # Method selection: bimc, bimc_ensemble, edge
+        self.method = cfg.TRAINER.BiMC.get('METHOD', 'bimc')
+        print(f"BiMC Method: {self.method}")
+
+        # EDGE-specific parameters
+        if self.method == 'edge':
+            edge_cfg = cfg.TRAINER.BiMC.get('EDGE', {})
+            self.gamma = edge_cfg.get('GAMMA', 0.6)
+            self.inference_edge = edge_cfg.get('INFERENCE_EDGE', False)
+            self.save_imag = edge_cfg.get('SAVE_IMAGE', False)
+            self.save_class = edge_cfg.get('SAVE_CLASSES', [40, 52, 250, 285, 320])
+            print(f"EDGE parameters - gamma: {self.gamma}, inference_edge: {self.inference_edge}")
+        else:
+            self.gamma = None
+            self.inference_edge = False
+            self.save_imag = False
+            self.save_class = []
 
     @torch.no_grad()
     def inference_text_feature(self, class_names, template, cls_begin_index):
@@ -104,7 +115,7 @@ class BiMC(nn.Module):
         all_features = []
         all_labels = []
 
-        # === Invariant feature collector added ===
+        # === EDGE: Invariant feature collector ===
         all_edge_features = []
 
         for batch in tqdm(loader, desc="Extracting image features", leave=False):
@@ -116,14 +127,14 @@ class BiMC(nn.Module):
             all_features.append(features)
             all_labels.append(labels)
 
-            # ---- Invariant features (grayscale + Sobel) ----
-            if self.edge:
+            # ---- EDGE: Invariant features (LoG edge extraction) ----
+            if self.method == 'edge':
                 edge_feat = self._extract_edge_features(images, labels)
                 all_edge_features.append(edge_feat)
 
         # ---- merge ----
         all_features = torch.cat(all_features, dim=0)
-        if self.edge and len(all_edge_features) > 0:
+        if self.method == 'edge' and len(all_edge_features) > 0:
             all_edge_features = torch.cat(all_edge_features, dim=0)
         else:
             all_edge_features = None
@@ -142,8 +153,8 @@ class BiMC(nn.Module):
         prototypes = torch.stack(prototypes, dim=0)
         prototypes = F.normalize(prototypes, dim=-1)
 
-        # ---- Edge prototype ----
-        if self.edge and all_edge_features is not None:
+        # ---- EDGE: Edge prototype ----
+        if self.method == 'edge' and all_edge_features is not None:
             edge_prototypes = []
             for c in unique_labels:
                 idx = torch.where(c == all_labels)[0]
@@ -401,20 +412,22 @@ class BiMC(nn.Module):
                 + (1 - beta) * image_proto
         )
 
-        if self.edge:
+        # ============================================================
+        # EDGE: Domain-invariant feature fusion
+        # ============================================================
+        if self.method == 'edge':
             gamma = self.gamma
+
+            # Feature-level fusion (optional during inference)
             if self.inference_edge:
-                # extract edge feature
                 edge_feat = self._extract_edge_features(images, labels)
                 edge_feat = F.normalize(edge_feat, dim=-1)
-
-                # feature fusion
                 img_feat = (1 - gamma) * img_feat + gamma * edge_feat
                 img_feat = F.normalize(img_feat, dim=-1)
 
-            # prototype fusion
-            fused_proto = (1 - gamma) * fused_proto + gamma * edge_proto
-
+            # Prototype-level fusion (always)
+            if edge_proto is not None:
+                fused_proto = (1 - gamma) * fused_proto + gamma * edge_proto
         # ============================================================
 
         # normalize prototype
@@ -428,16 +441,21 @@ class BiMC(nn.Module):
         prob_knn = F.softmax(logits_knn, dim=-1)
 
         NUM_BASE_CLS = num_base_cls
-        use_diversity = self.cfg.TRAINER.BiMC.USING_ENSEMBLE
-        if use_diversity:
+
+        # ============================================================
+        # Ensemble strategy: bimc vs bimc_ensemble vs edge
+        # ============================================================
+        if self.method in ['bimc_ensemble', 'edge']:
+            # Use ensemble diversity
             ensemble_alpha = self.cfg.DATASET.ENSEMBLE_ALPHA
+            base_probs = ensemble_alpha * prob_fused_proto[:, :NUM_BASE_CLS] + (1 - ensemble_alpha) * prob_cov[:, :NUM_BASE_CLS]
+            inc_probs = ensemble_alpha * prob_fused_proto[:, NUM_BASE_CLS:] + (1 - ensemble_alpha) * prob_knn[:, NUM_BASE_CLS:]
+            prob_fused = torch.cat([base_probs, inc_probs], dim=1)
         else:
-            ensemble_alpha = 1.0
+            # Standard BiMC: no ensemble
+            prob_fused = prob_fused_proto
+        # ============================================================
 
-        base_probs = ensemble_alpha * prob_fused_proto[:, :NUM_BASE_CLS] + (1 - ensemble_alpha) * prob_cov[:, :NUM_BASE_CLS]
-        inc_probs = ensemble_alpha * prob_fused_proto[:, NUM_BASE_CLS:] + (1 - ensemble_alpha) * prob_knn[:, NUM_BASE_CLS:]
-
-        prob_fused = torch.cat([base_probs, inc_probs], dim=1)
         logits = prob_fused
         return logits
 

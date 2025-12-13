@@ -26,6 +26,8 @@ Please follow [CEC](https://github.com/icoz69/CEC-CVPR2021) to download *mini*-I
 
 First, remember to modify the data path `ROOT` in the `dataset` configuration file.
 
+### Standard FSCIL (CIFAR-100, MiniImageNet, CUB-200)
+
 ~~~BASH
 # CIFAR BIMC
 python main.py --data_cfg ./configs/datasets/cifar100.yaml --train_cfg ./configs/trainers/bimc.yaml
@@ -45,6 +47,17 @@ python main.py --data_cfg ./configs/datasets/cub200.yaml --train_cfg ./configs/t
 # CUB200 BIMC_Ensemble
 python main.py --data_cfg ./configs/datasets/cub200.yaml --train_cfg ./configs/trainers/bimc_ensemble.yaml
 ~~~
+
+### DG-FSCIL with EDGE (DomainNet)
+
+For domain generalization FSCIL experiments with EDGE method:
+
+~~~BASH
+# DomainNet EDGE (always with ensemble for fair comparison with bimc_ensemble baseline)
+python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge.yaml
+~~~
+
+**EDGE Method**: Enhances domain generalization by extracting domain-invariant edge features using Laplacian of Gaussian (LoG) edge detection, making the model robust to domain shifts in DG-FSCIL scenarios. EDGE always uses ensemble strategy to ensure fair comparison with the bimc_ensemble baseline.
 
 ## Acknowledgment
 

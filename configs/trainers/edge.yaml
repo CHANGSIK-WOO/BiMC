@@ -16,11 +16,11 @@ DATALOADER:
 MODEL:
   BACKBONE:
     NAME: "ViT-B/16"  #  RN50  RN101  ViT-B/32  ViT-B/16  ViT-L/14
-  
+
 
 TRAINER:
   BiMC:
-    METHOD: "bimc_ensemble"  # bimc, bimc_ensemble, edge
+    METHOD: "edge"  # bimc, bimc_ensemble, edge
     PREC: "fp16"  # fp16, fp32, amp
 
     VISION_CALIBRATION: True
@@ -33,4 +33,12 @@ TRAINER:
     GAMMA_BASE: 1.0
     GAMMA_INC: 5.0
 
+    # EDGE specific parameters
+    EDGE:
+      GAMMA: 0.6  # Edge feature fusion weight
+      INFERENCE_EDGE: False  # Extract edge features during inference
+      SAVE_IMAGE: False  # Save visualization images
+      SAVE_CLASSES: [40, 52, 250, 285, 320]  # Classes to save visualizations for
+
+    # EDGE always uses ensemble (same condition as bimc_ensemble baseline)
     USING_ENSEMBLE: True
