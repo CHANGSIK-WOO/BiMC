@@ -128,6 +128,12 @@ class Runner:
             else:
                 print("[Warning] Router requested but not available, using default parameters")
                 use_meta_router = False
+
+        # Initialize router parameter tracking
+        router_params_dict = {}
+        if use_meta_router:
+            self.model.init_router_tracking()
+
         for task_id in range(self.data_manager.num_tasks):
             print(f"TASK {task_id}")
             self.model.eval()
@@ -151,6 +157,14 @@ class Runner:
             elapsed_time = end_time - start_time
             print(f'+++++++++++  task {task_id}, time: {elapsed_time} ++++++++++++++++')
 
+            # Collect router params after task inference
+            if use_meta_router:
+                domain_name = self.data_manager._get_domain_for_session(task_id)
+                avg_router_params = self.model.get_avg_router_params()
+                if avg_router_params is not None:
+                    router_params_dict[f'task_{task_id}_{domain_name}_inference'] = avg_router_params
+                    print(f"[Router] Task {task_id} ({domain_name}) inference - gamma: {avg_router_params['gamma']:.4f}, sigma: {avg_router_params['sigma']:.4f}")
+
             print(f'=> Task [{task_id}], Acc: {acc["mean_acc"]:.3f}')
             self.acc_list.append(round(acc["mean_acc"], 3))
             self.task_acc_list.append(acc['task_acc'])
@@ -173,6 +187,14 @@ class Runner:
                 self.model.building = False
                 acc = self.inference_target_domain(target_domain, merged_state_dict)
                 target_acc_dict[target_domain] = acc
+
+                # Collect router params after target domain inference
+                if use_meta_router:
+                    avg_router_params = self.model.get_avg_router_params()
+                    if avg_router_params is not None:
+                        router_params_dict[f'target_{target_domain}'] = avg_router_params
+                        print(f"[Router] Target {target_domain} - gamma: {avg_router_params['gamma']:.4f}, sigma: {avg_router_params['sigma']:.4f}")
+
                 print(f'=> {target_domain} Acc: {acc["mean_acc"]:.3f}')
                 print(f'   Task-wise: {acc["task_acc"]}')
 
@@ -209,6 +231,11 @@ class Runner:
         # Add hyperparameters to save_dict if provided
         if hyperparam_dict is not None:
             save_dict["hyperparameters"] = hyperparam_dict
+
+        # Add router parameters if using meta router
+        if use_meta_router and len(router_params_dict) > 0:
+            save_dict["router_params"] = router_params_dict
+            print(f"\n[Router] Saved {len(router_params_dict)} router parameter entries")
 
         # Generate filename from hyperparameters
         if hyperparam_dict is not None:

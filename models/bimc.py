@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import models.clip.clip as clip
 import json
 import os
+import numpy as np
 import torchvision.utils as vutils
 import torchvision
 from tqdm import tqdm
@@ -465,6 +466,10 @@ class BiMC(nn.Module):
                 router_params = self.predict_router_params(images)
                 gamma = router_params['gamma']
 
+                # Track router params during inference (not building)
+                if not self.building:
+                    self.track_router_params(router_params)
+
                 if self.inference_edge:
                     edge_feat = self._extract_edge_features(images, labels, router_params)
                     edge_feat = F.normalize(edge_feat, dim=-1)
@@ -581,3 +586,51 @@ class BiMC(nn.Module):
                 param.requires_grad = True
 
         print("[BiMC] Froze all parameters except router network")
+
+    def init_router_tracking(self):
+        """Initialize router parameter tracking."""
+        self.router_param_accumulator = {
+            'sigma': [],
+            'kernel': [],
+            'gamma': []
+        }
+
+    def track_router_params(self, router_params):
+        """
+        Track router parameters for averaging.
+
+        Args:
+            router_params: Dict containing sigma, kernel, gamma
+        """
+        if not hasattr(self, 'router_param_accumulator'):
+            self.init_router_tracking()
+
+        self.router_param_accumulator['sigma'].append(router_params['sigma'].detach().cpu().item())
+        self.router_param_accumulator['kernel'].append(router_params['kernel'].detach().cpu())
+        self.router_param_accumulator['gamma'].append(router_params['gamma'].detach().cpu().item())
+
+    def get_avg_router_params(self):
+        """
+        Get averaged router parameters and reset accumulator.
+
+        Returns:
+            dict: Averaged sigma, kernel, gamma
+        """
+        if not hasattr(self, 'router_param_accumulator') or len(self.router_param_accumulator['sigma']) == 0:
+            return None
+
+        avg_sigma = float(np.mean(self.router_param_accumulator['sigma']))
+        avg_gamma = float(np.mean(self.router_param_accumulator['gamma']))
+
+        # Average kernel: stack and mean
+        kernel_stack = torch.stack(self.router_param_accumulator['kernel'], dim=0)
+        avg_kernel = kernel_stack.mean(dim=0).squeeze().tolist()  # Convert to list for JSON
+
+        # Reset accumulator
+        self.init_router_tracking()
+
+        return {
+            'sigma': avg_sigma,
+            'kernel': avg_kernel,
+            'gamma': avg_gamma
+        }
