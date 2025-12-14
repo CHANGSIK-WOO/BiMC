@@ -43,7 +43,7 @@ TRAINER:
       ENABLED: True
       NUM_EPISODES: 50  # Number of meta-training episodes
       INNER_LR: 0.01     # Learning rate for inner loop
-      OUTER_LR: 0.01    # Learning rate for outer loop (router parameters)
+      OUTER_LR: 0.001    # Learning rate for outer loop (router parameters)
       INNER_STEPS: 3     # Number of inner loop gradient steps per support domain
       SUPPORT_SHOT: 4    # Number of samples for prototype in inner loop
       QUERY_SHOT: 1      # Number of samples for loss computation

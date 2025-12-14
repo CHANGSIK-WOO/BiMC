@@ -55,7 +55,8 @@ class RouterNetwork(nn.Module):
         )
 
         with torch.no_grad():
-            self.gamma_head[-2].bias.fill_(0.4)
+            self.gamma_head[-2].bias.fill_(0.5)
+            self.gamma_head[-2].weight.mul_(0.1)
 
         # Initialize kernel head to output Laplacian-like kernel initially
         self._initialize_kernel_head()

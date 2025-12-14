@@ -41,7 +41,7 @@ TRAINER:
     # Meta-learning specific parameters
     META:
       ENABLED: True
-      NUM_EPISODES: 100  # Number of meta-training episodes
+      NUM_EPISODES: 50  # Number of meta-training episodes
       INNER_LR: 0.01     # Learning rate for inner loop
       OUTER_LR: 0.01    # Learning rate for outer loop (router parameters)
       INNER_STEPS: 3     # Number of inner loop gradient steps per support domain
