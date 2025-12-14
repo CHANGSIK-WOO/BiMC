@@ -395,12 +395,15 @@ class Runner:
                 support_dataset, query_dataset_inner = \
                     self.data_manager.get_k_shot_split(sup_task, k_support, k_query)
 
+                # Use meta-specific batch size
+                meta_batch_size = meta_cfg.BATCH_SIZE
+
                 support_loader = self.data_manager.get_meta_dataloader(
-                    support_dataset, batch_size=k_support * 5, shuffle=False
+                    support_dataset, batch_size=meta_batch_size, shuffle=False
                 )
 
                 query_loader_inner = self.data_manager.get_meta_dataloader(
-                    query_dataset_inner, batch_size=k_query * 5, shuffle=False
+                    query_dataset_inner, batch_size=meta_batch_size, shuffle=False
                 )
 
                 # Inner gradient steps
@@ -429,11 +432,11 @@ class Runner:
                 self.data_manager.get_k_shot_split(query_task, k_support, k_query)
 
             query_support_loader = self.data_manager.get_meta_dataloader(
-                query_support_dataset, batch_size=k_support * 5, shuffle=False
+                query_support_dataset, batch_size=meta_batch_size, shuffle=False
             )
 
             query_query_loader = self.data_manager.get_meta_dataloader(
-                query_query_dataset, batch_size=k_query * 5, shuffle=False
+                query_query_dataset, batch_size=meta_batch_size, shuffle=False
             )
 
             # Compute meta-objective on query domain
@@ -464,6 +467,14 @@ class Runner:
         print("Meta-Learning Completed!")
         print("Router network trained successfully")
         print("=" * 60 + "\n")
+
+        # Save router checkpoint
+        # Create prefix the same way as in run()
+        data_name = os.path.splitext(os.path.basename(self.cfg.DATA_CFG_PATH))[0]
+        train_name = os.path.splitext(os.path.basename(self.cfg.TRAIN_CFG_PATH))[0]
+        prefix = f"{data_name}_{train_name}"
+        output_dir = os.path.join("outputs", prefix)
+        self.save_router_checkpoint(output_dir)
 
         # Enable router for evaluation
         self.model.enable_router()
@@ -652,3 +663,75 @@ class Runner:
 
         meta_loss = total_loss / max(num_batches, 1)
         return meta_loss
+
+    # ======================================================
+    # Router Checkpoint Management
+    # ======================================================
+
+    def save_router_checkpoint(self, output_dir):
+        """
+        Save router network checkpoint.
+
+        Args:
+            output_dir: Base output directory (e.g., outputs/prefix)
+        """
+        if self.model.router_network is None:
+            print("[Warning] No router network to save")
+            return
+
+        import os
+        # Create router_checkpoints subdirectory
+        checkpoint_dir = os.path.join(output_dir, "router_checkpoints")
+        os.makedirs(checkpoint_dir, exist_ok=True)
+
+        # Create checkpoint filename with timestamp
+        import time
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        checkpoint_path = os.path.join(checkpoint_dir, f"router_{timestamp}.pth")
+
+        # Save router state dict
+        checkpoint = {
+            'router_state_dict': self.model.router_network.state_dict(),
+            'timestamp': timestamp,
+            'config': {
+                'input_dim': 512,
+                'hidden_dim': self.cfg.TRAINER.BiMC.META.ROUTER_HIDDEN_DIM,
+            }
+        }
+
+        torch.save(checkpoint, checkpoint_path)
+        print(f"\n[Checkpoint] Router saved to: {checkpoint_path}")
+
+        # Also save as 'latest'
+        latest_path = os.path.join(checkpoint_dir, "router_latest.pth")
+        torch.save(checkpoint, latest_path)
+        print(f"[Checkpoint] Latest router saved to: {latest_path}\n")
+
+    def load_router_checkpoint(self, checkpoint_path):
+        """
+        Load router network from checkpoint.
+
+        Args:
+            checkpoint_path: Path to checkpoint file
+        """
+        if self.model.router_network is None:
+            print("[Error] Router network not initialized!")
+            return
+
+        import os
+        if not os.path.exists(checkpoint_path):
+            print(f"[Error] Checkpoint not found: {checkpoint_path}")
+            return
+
+        # Load checkpoint
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+
+        # Load state dict
+        self.model.router_network.load_state_dict(checkpoint['router_state_dict'])
+
+        print(f"[Checkpoint] Router loaded from: {checkpoint_path}")
+        if 'timestamp' in checkpoint:
+            print(f"[Checkpoint] Saved at: {checkpoint['timestamp']}")
+
+        # Enable router
+        self.model.enable_router()

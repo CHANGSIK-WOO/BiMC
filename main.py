@@ -88,6 +88,7 @@ def extend_cfg(cfg):
     cfg.TRAINER.BiMC.META.SUPPORT_SHOT = 4
     cfg.TRAINER.BiMC.META.QUERY_SHOT = 1
     cfg.TRAINER.BiMC.META.ROUTER_HIDDEN_DIM = 256
+    cfg.TRAINER.BiMC.META.BATCH_SIZE = 16  # Small batch size for meta-learning
 
 
 
@@ -121,6 +122,8 @@ def main():
                         help="Run hyperparameter sweep for edge method")
     parser.add_argument('--meta', action='store_true',
                         help="Run meta-learning for router network")
+    parser.add_argument('--router_checkpoint', type=str, default=None,
+                        help="Path to router checkpoint (skips meta-learning if provided)")
 
     args = parser.parse_args()
 
@@ -178,20 +181,32 @@ def main():
         # Single run without hyperparameter sweep
         engine = Runner(cfg)
 
-        if args.meta:
-            # Meta-learning mode: train router network
-            print("\n" + "=" * 60)
-            print("Starting Meta-Learning for Router Network")
-            print("=" * 60 + "\n")
+        if args.meta or args.router_checkpoint:
+            # Meta-learning or checkpoint-based mode
 
-            engine.meta_run()
+            if args.router_checkpoint:
+                # Load router from checkpoint (skip meta-learning)
+                print("\n" + "=" * 60)
+                print("Loading Router from Checkpoint")
+                print(f"Checkpoint: {args.router_checkpoint}")
+                print("=" * 60 + "\n")
 
-            print("\n" + "=" * 60)
-            print("Meta-Learning Completed!")
-            print("Now running evaluation with trained router...")
-            print("=" * 60 + "\n")
+                engine.load_router_checkpoint(args.router_checkpoint)
 
-            # After meta-learning, run normal evaluation with trained router
+            else:
+                # Meta-learning mode: train router network
+                print("\n" + "=" * 60)
+                print("Starting Meta-Learning for Router Network")
+                print("=" * 60 + "\n")
+
+                engine.meta_run()
+
+                print("\n" + "=" * 60)
+                print("Meta-Learning Completed!")
+                print("Now running evaluation with trained router...")
+                print("=" * 60 + "\n")
+
+            # After meta-learning or loading checkpoint, run evaluation with router
             engine.run(use_meta_router=True)
         else:
             # Normal run without meta-learning
