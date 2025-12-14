@@ -78,6 +78,17 @@ def extend_cfg(cfg):
     cfg.TRAINER.BiMC.EDGE.SAVE_IMAGE = False
     cfg.TRAINER.BiMC.EDGE.SAVE_CLASSES = []
 
+    # Meta-learning config
+    cfg.TRAINER.BiMC.META = CN()
+    cfg.TRAINER.BiMC.META.ENABLED = False
+    cfg.TRAINER.BiMC.META.NUM_EPISODES = 100
+    cfg.TRAINER.BiMC.META.INNER_LR = 0.01
+    cfg.TRAINER.BiMC.META.OUTER_LR = 0.001
+    cfg.TRAINER.BiMC.META.INNER_STEPS = 3
+    cfg.TRAINER.BiMC.META.SUPPORT_SHOT = 4
+    cfg.TRAINER.BiMC.META.QUERY_SHOT = 1
+    cfg.TRAINER.BiMC.META.ROUTER_HIDDEN_DIM = 256
+
 
 
     
@@ -108,6 +119,8 @@ def main():
     parser.add_argument('--train_cfg', type=str, help="Path to the training configuration file")
     parser.add_argument('--hyperparam_sweep', action='store_true',
                         help="Run hyperparameter sweep for edge method")
+    parser.add_argument('--meta', action='store_true',
+                        help="Run meta-learning for router network")
 
     args = parser.parse_args()
 
@@ -164,7 +177,25 @@ def main():
     else:
         # Single run without hyperparameter sweep
         engine = Runner(cfg)
-        engine.run()
+
+        if args.meta:
+            # Meta-learning mode: train router network
+            print("\n" + "=" * 60)
+            print("Starting Meta-Learning for Router Network")
+            print("=" * 60 + "\n")
+
+            engine.meta_run()
+
+            print("\n" + "=" * 60)
+            print("Meta-Learning Completed!")
+            print("Now running evaluation with trained router...")
+            print("=" * 60 + "\n")
+
+            # After meta-learning, run normal evaluation with trained router
+            engine.run(use_meta_router=True)
+        else:
+            # Normal run without meta-learning
+            engine.run()
 
 
 if __name__ == '__main__':

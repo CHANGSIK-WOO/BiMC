@@ -84,6 +84,14 @@ class BiMC(nn.Module):
             self.inference_edge = False
             self.edge_sigma = 1.0
 
+        # Meta-learning: Router network
+        self.use_router = False
+        self.router_network = None
+        if 'edge_meta' in self.method:
+            from models.router import RouterNetwork
+            self.router_network = RouterNetwork(cfg, input_dim=512).to(self.device)
+            print(f"Meta-learning enabled: RouterNetwork initialized")
+
         # Logging
         self.save_imag = False
         self.save_class = [40, 52, 250, 285, 320]
@@ -180,33 +188,57 @@ class BiMC(nn.Module):
         }
 
     @torch.no_grad()
-    def _extract_edge_features(self, images, labels):
+    def _extract_edge_features(self, images, labels, router_params=None):
         """
         Generate domain-invariant EDGE structural features using
         Laplacian of Gaussian (LoG) edge extraction.
         This provides stronger, noise-robust invariant cues
         than raw Sobel edges.
+
+        Args:
+            images: Input images (B, 3, H, W)
+            labels: Labels (B,)
+            router_params: Optional dict containing:
+                - 'sigma': Gaussian blur sigma (scalar or (B,))
+                - 'kernel': Laplacian kernel (1,1,3,3) or (B,1,3,3)
+                - 'gamma': Edge fusion weight (not used here, but for consistency)
+
+        If router_params is provided, use those parameters.
+        Otherwise, use default self.edge_sigma and standard Laplacian kernel.
         """
 
+        # Determine sigma and kernel
+        if router_params is not None and self.use_router:
+            sigma = router_params.get('sigma', self.edge_sigma)
+            laplacian_kernel = router_params.get('kernel', None)
+        else:
+            sigma = self.edge_sigma
+            laplacian_kernel = None
+
         # === Gaussian smoothing ===
-        # Reduces noise, makes edges invariant to texture/illumination
-        # Use dynamic sigma parameter
-        blur = torchvision.transforms.GaussianBlur(kernel_size=5, sigma=self.edge_sigma)
+        # Note: torchvision GaussianBlur doesn't support batched sigma
+        # So we use the aggregated sigma value
+        if isinstance(sigma, torch.Tensor):
+            sigma = sigma.item()
+
+        blur = torchvision.transforms.GaussianBlur(kernel_size=5, sigma=sigma)
         img_blur = blur(images)
 
         # Convert to grayscale
         gray = img_blur.mean(dim=1, keepdim=True)  # (B,1,H,W)
 
         # === Laplacian kernel ===
-        laplacian_kernel = torch.tensor(
-            [[
-                [0, 1, 0],
-                [1, -4, 1],
-                [0, 1, 0]
-            ]],
-            dtype=gray.dtype,
-            device=gray.device
-        ).unsqueeze(0)  # (1,1,3,3)
+        if laplacian_kernel is None:
+            # Default Laplacian kernel
+            laplacian_kernel = torch.tensor(
+                [[
+                    [0, 1, 0],
+                    [1, -4, 1],
+                    [0, 1, 0]
+                ]],
+                dtype=gray.dtype,
+                device=gray.device
+            ).unsqueeze(0)  # (1,1,3,3)
 
         # === LoG edge ===
         edge = F.conv2d(gray, laplacian_kernel, padding=1).abs()
@@ -475,3 +507,59 @@ class BiMC(nn.Module):
         data = data.to(self.device)
         targets = targets.to(self.device)
         return data, targets
+
+    # ======================================================
+    # Meta-Learning: Router Network Methods
+    # ======================================================
+
+    def predict_router_params(self, images):
+        """
+        Predict task-adaptive hyperparameters using router network.
+
+        Args:
+            images: Input images (B, 3, H, W)
+
+        Returns:
+            router_params: Dict containing sigma, kernel, gamma
+        """
+        if self.router_network is None:
+            raise ValueError("Router network not initialized!")
+
+        # Extract image features with CLIP (frozen)
+        with torch.no_grad():
+            img_features = self.clip_model.encode_image(images)
+            img_features = F.normalize(img_features, dim=-1)
+
+        # Predict parameters with router (learnable)
+        sigma, kernel, gamma = self.router_network.forward_aggregated(img_features)
+
+        router_params = {
+            'sigma': sigma,
+            'kernel': kernel,
+            'gamma': gamma
+        }
+
+        return router_params
+
+    def enable_router(self):
+        """Enable router network for inference."""
+        self.use_router = True
+        print("[BiMC] Router network enabled for inference")
+
+    def disable_router(self):
+        """Disable router network for inference."""
+        self.use_router = False
+        print("[BiMC] Router network disabled for inference")
+
+    def freeze_all_except_router(self):
+        """Freeze all parameters except router network."""
+        # Freeze CLIP model
+        for param in self.clip_model.parameters():
+            param.requires_grad = False
+
+        # Unfreeze router network
+        if self.router_network is not None:
+            for param in self.router_network.parameters():
+                param.requires_grad = True
+
+        print("[BiMC] Froze all parameters except router network")

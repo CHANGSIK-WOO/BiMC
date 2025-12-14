@@ -106,7 +106,7 @@ class Runner:
         return result
 
     @torch.no_grad()
-    def run(self, hyperparam_dict=None):
+    def run(self, hyperparam_dict=None, use_meta_router=False):
         print(f'Start inferencing on all tasks: [0, {self.data_manager.num_tasks - 1}]')
         state_dict_list = []
         # get dataset and trainer names
@@ -119,6 +119,15 @@ class Runner:
         # Apply hyperparameters if provided
         if hyperparam_dict is not None:
             self._apply_hyperparameters(hyperparam_dict)
+
+        # Enable router for inference if requested
+        if use_meta_router:
+            if hasattr(self.model, 'router_network') and self.model.router_network is not None:
+                self.model.enable_router()
+                print("[Runner] Using trained router network for inference")
+            else:
+                print("[Warning] Router requested but not available, using default parameters")
+                use_meta_router = False
         for task_id in range(self.data_manager.num_tasks):
             print(f"TASK {task_id}")
             self.model.eval()
@@ -311,3 +320,335 @@ class Runner:
         data = data.to(self.device)
         targets = targets.to(self.device)
         return data, targets
+
+    # ======================================================
+    # Meta-Learning Methods
+    # ======================================================
+
+    def meta_run(self):
+        """
+        Meta-learning training loop for router network.
+
+        Episode structure:
+            - 4 training domains: [real, infograph, painting, sketch]
+            - Each episode: 3 support domains + 1 query domain
+            - Inner loop: Update on support domains (3 domains sequentially)
+            - Outer loop: Meta-update on query domain
+        """
+        print("\n" + "=" * 60)
+        print("Meta-Learning: Training Router Network")
+        print("=" * 60)
+
+        # Ensure this is DG-FSCIL dataset
+        if not self.is_dgfscil:
+            raise ValueError("Meta-learning is only supported for DG-FSCIL (DomainNet) dataset!")
+
+        # Freeze all except router
+        self.model.freeze_all_except_router()
+
+        # Get meta-learning config
+        meta_cfg = self.cfg.TRAINER.BiMC.META
+        num_episodes = meta_cfg.NUM_EPISODES
+        inner_lr = meta_cfg.INNER_LR
+        outer_lr = meta_cfg.OUTER_LR
+        inner_steps = meta_cfg.INNER_STEPS
+        k_support = meta_cfg.SUPPORT_SHOT
+        k_query = meta_cfg.QUERY_SHOT
+
+        # Setup optimizer for router network
+        router_optimizer = torch.optim.Adam(
+            self.model.router_network.parameters(),
+            lr=outer_lr
+        )
+
+        print(f"Episodes: {num_episodes}")
+        print(f"Inner LR: {inner_lr}, Outer LR: {outer_lr}")
+        print(f"Inner Steps: {inner_steps}")
+        print(f"Support/Query Split: {k_support}/{k_query}")
+        print("=" * 60 + "\n")
+
+        # Meta-training loop
+        for episode in range(num_episodes):
+            print(f"\n[Episode {episode + 1}/{num_episodes}]")
+
+            # Sample support and query domains
+            support_domains, query_domain, support_tasks, query_task = \
+                self.data_manager.get_meta_episode_domains()
+
+            print(f"  Support domains: {support_domains} (tasks: {support_tasks})")
+            print(f"  Query domain: {query_domain} (task: {query_task})")
+
+            # ==========================================
+            # Inner Loop: Adapt on Support Domains
+            # ==========================================
+            # Save initial router parameters
+            initial_params = {
+                name: param.clone().detach()
+                for name, param in self.model.router_network.named_parameters()
+            }
+
+            # Inner loop: Train on each support domain sequentially
+            for sup_idx, (sup_domain, sup_task) in enumerate(zip(support_domains, support_tasks)):
+                print(f"\n  Inner Loop [{sup_idx + 1}/3]: {sup_domain}")
+
+                # Get support and query split for this domain
+                support_dataset, query_dataset_inner = \
+                    self.data_manager.get_k_shot_split(sup_task, k_support, k_query)
+
+                support_loader = self.data_manager.get_meta_dataloader(
+                    support_dataset, batch_size=k_support * 5, shuffle=False
+                )
+
+                query_loader_inner = self.data_manager.get_meta_dataloader(
+                    query_dataset_inner, batch_size=k_query * 5, shuffle=False
+                )
+
+                # Inner gradient steps
+                for inner_step in range(inner_steps):
+                    inner_loss = self._meta_inner_step(
+                        support_loader, query_loader_inner,
+                        k_support, k_query
+                    )
+
+                    # Manual gradient descent (simple SGD)
+                    with torch.no_grad():
+                        for name, param in self.model.router_network.named_parameters():
+                            if param.grad is not None:
+                                param.data -= inner_lr * param.grad
+                                param.grad.zero_()
+
+                    print(f"    Step {inner_step + 1}/{inner_steps}, Loss: {inner_loss:.4f}")
+
+            # ==========================================
+            # Outer Loop: Meta-update on Query Domain
+            # ==========================================
+            print(f"\n  Outer Loop: {query_domain}")
+
+            # Get query domain data
+            query_support_dataset, query_query_dataset = \
+                self.data_manager.get_k_shot_split(query_task, k_support, k_query)
+
+            query_support_loader = self.data_manager.get_meta_dataloader(
+                query_support_dataset, batch_size=k_support * 5, shuffle=False
+            )
+
+            query_query_loader = self.data_manager.get_meta_dataloader(
+                query_query_dataset, batch_size=k_query * 5, shuffle=False
+            )
+
+            # Compute meta-objective on query domain
+            meta_loss = self._meta_outer_step(
+                query_support_loader, query_query_loader,
+                k_support, k_query
+            )
+
+            # Reset to initial parameters before meta-update
+            with torch.no_grad():
+                for name, param in self.model.router_network.named_parameters():
+                    param.data = initial_params[name]
+
+            # Meta-update using optimizer
+            router_optimizer.zero_grad()
+            meta_loss.backward()
+            router_optimizer.step()
+
+            print(f"  Meta Loss: {meta_loss.item():.4f}")
+
+            # Periodic logging
+            if (episode + 1) % 10 == 0:
+                print(f"\n{'=' * 60}")
+                print(f"Episode {episode + 1}/{num_episodes} completed")
+                print(f"{'=' * 60}\n")
+
+        print("\n" + "=" * 60)
+        print("Meta-Learning Completed!")
+        print("Router network trained successfully")
+        print("=" * 60 + "\n")
+
+        # Enable router for evaluation
+        self.model.enable_router()
+
+    def _meta_inner_step(self, support_loader, query_loader, k_support, k_query):
+        """
+        Inner loop: Compute loss on support set to adapt router.
+
+        Args:
+            support_loader: DataLoader for support set (k_support shots)
+            query_loader: DataLoader for query set within inner loop (k_query shots)
+            k_support: Number of support shots
+            k_query: Number of query shots
+
+        Returns:
+            loss: Scalar loss value
+        """
+        self.model.router_network.train()
+
+        total_loss = 0.0
+        num_batches = 0
+
+        # Build prototypes using support set
+        support_features = []
+        support_labels = []
+
+        for batch in support_loader:
+            images, labels = self.parse_batch(batch)
+
+            # Predict router params
+            router_params = self.model.predict_router_params(images)
+
+            # Extract features with router params
+            img_feat = self.model.extract_img_feature(images)
+            img_feat = F.normalize(img_feat, dim=-1)
+
+            # Extract edge features with router params
+            edge_feat = self.model._extract_edge_features(images, labels, router_params)
+            edge_feat = F.normalize(edge_feat, dim=-1)
+
+            # Fuse features using router's gamma
+            gamma = router_params['gamma']
+            fused_feat = (1 - gamma) * img_feat + gamma * edge_feat
+            fused_feat = F.normalize(fused_feat, dim=-1)
+
+            support_features.append(fused_feat)
+            support_labels.append(labels)
+
+        support_features = torch.cat(support_features, dim=0)
+        support_labels = torch.cat(support_labels, dim=0)
+
+        # Compute prototypes
+        unique_labels = torch.unique(support_labels)
+        prototypes = []
+        for c in unique_labels:
+            idx = (support_labels == c)
+            proto = support_features[idx].mean(dim=0)
+            prototypes.append(proto)
+        prototypes = torch.stack(prototypes, dim=0)  # (N_classes, D)
+        prototypes = F.normalize(prototypes, dim=-1)
+
+        # Compute loss on query set
+        total_loss_tensor = 0.0  # Accumulate as tensor
+        num_batches = 0
+
+        for batch in query_loader:
+            images, labels = self.parse_batch(batch)
+
+            # Predict router params
+            router_params = self.model.predict_router_params(images)
+
+            # Extract and fuse features
+            img_feat = self.model.extract_img_feature(images)
+            img_feat = F.normalize(img_feat, dim=-1)
+
+            edge_feat = self.model._extract_edge_features(images, labels, router_params)
+            edge_feat = F.normalize(edge_feat, dim=-1)
+
+            gamma = router_params['gamma']
+            fused_feat = (1 - gamma) * img_feat + gamma * edge_feat
+            fused_feat = F.normalize(fused_feat, dim=-1)
+
+            # Compute similarity to prototypes
+            logits = fused_feat @ prototypes.t()  # (B, N_classes)
+
+            # Map labels to prototype indices
+            label_to_idx = {c.item(): idx for idx, c in enumerate(unique_labels)}
+            targets_idx = torch.tensor(
+                [label_to_idx[l.item()] for l in labels],
+                device=labels.device
+            )
+
+            # Cross-entropy loss
+            loss = F.cross_entropy(logits, targets_idx)
+
+            # Accumulate loss as tensor (not .item())
+            total_loss_tensor += loss
+            num_batches += 1
+
+        # Compute average loss
+        avg_loss_tensor = total_loss_tensor / max(num_batches, 1)
+
+        # Single backward call
+        avg_loss_tensor.backward()
+
+        # Return scalar for logging
+        return avg_loss_tensor.item()
+
+    def _meta_outer_step(self, support_loader, query_loader, k_support, k_query):
+        """
+        Outer loop: Compute meta-objective on query domain.
+
+        Similar to inner step, but returns loss tensor for meta-update.
+
+        Returns:
+            meta_loss: Tensor (requires_grad=True)
+        """
+        self.model.router_network.train()
+
+        # Build prototypes using support set
+        support_features = []
+        support_labels = []
+
+        for batch in support_loader:
+            images, labels = self.parse_batch(batch)
+
+            router_params = self.model.predict_router_params(images)
+
+            img_feat = self.model.extract_img_feature(images)
+            img_feat = F.normalize(img_feat, dim=-1)
+
+            edge_feat = self.model._extract_edge_features(images, labels, router_params)
+            edge_feat = F.normalize(edge_feat, dim=-1)
+
+            gamma = router_params['gamma']
+            fused_feat = (1 - gamma) * img_feat + gamma * edge_feat
+            fused_feat = F.normalize(fused_feat, dim=-1)
+
+            support_features.append(fused_feat)
+            support_labels.append(labels)
+
+        support_features = torch.cat(support_features, dim=0)
+        support_labels = torch.cat(support_labels, dim=0)
+
+        # Compute prototypes
+        unique_labels = torch.unique(support_labels)
+        prototypes = []
+        for c in unique_labels:
+            idx = (support_labels == c)
+            proto = support_features[idx].mean(dim=0)
+            prototypes.append(proto)
+        prototypes = torch.stack(prototypes, dim=0)
+        prototypes = F.normalize(prototypes, dim=-1)
+
+        # Compute loss on query set
+        total_loss = 0.0
+        num_batches = 0
+
+        for batch in query_loader:
+            images, labels = self.parse_batch(batch)
+
+            router_params = self.model.predict_router_params(images)
+
+            img_feat = self.model.extract_img_feature(images)
+            img_feat = F.normalize(img_feat, dim=-1)
+
+            edge_feat = self.model._extract_edge_features(images, labels, router_params)
+            edge_feat = F.normalize(edge_feat, dim=-1)
+
+            gamma = router_params['gamma']
+            fused_feat = (1 - gamma) * img_feat + gamma * edge_feat
+            fused_feat = F.normalize(fused_feat, dim=-1)
+
+            logits = fused_feat @ prototypes.t()
+
+            label_to_idx = {c.item(): idx for idx, c in enumerate(unique_labels)}
+            targets_idx = torch.tensor(
+                [label_to_idx[l.item()] for l in labels],
+                device=labels.device
+            )
+
+            loss = F.cross_entropy(logits, targets_idx)
+
+            total_loss += loss
+            num_batches += 1
+
+        meta_loss = total_loss / max(num_batches, 1)
+        return meta_loss

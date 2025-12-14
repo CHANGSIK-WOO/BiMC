@@ -290,6 +290,149 @@ class DGFSCILDataManager:
                     break
         return class_to_task
 
+    # ======================================================
+    # Meta-Learning Specific Methods
+    # ======================================================
+
+    def get_meta_episode_domains(self, exclude_task=None):
+        """
+        Get support and query domains for a meta-learning episode.
+
+        Args:
+            exclude_task: Optional task ID to exclude (for meta-testing)
+
+        Returns:
+            support_domains: List of 3 domain names for support set
+            query_domain: 1 domain name for query set
+        """
+        import random
+
+        # Available training domains: [0: real, 1: infograph, 2: painting, 3: sketch]
+        all_tasks = list(range(self.num_tasks))
+
+        if exclude_task is not None:
+            all_tasks = [t for t in all_tasks if t != exclude_task]
+
+        # Randomly shuffle and split: 3 support + 1 query
+        random.shuffle(all_tasks)
+        support_tasks = all_tasks[:3]
+        query_task = all_tasks[3]
+
+        # Convert task IDs to domain names
+        support_domains = [self._get_domain_for_session(t) for t in support_tasks]
+        query_domain = self._get_domain_for_session(query_task)
+
+        return support_domains, query_domain, support_tasks, query_task
+
+    def get_k_shot_split(self, task_id, k_support=4, k_query=1):
+        """
+        Split 5-shot data into k_support + k_query for meta-learning.
+
+        Args:
+            task_id: Session ID
+            k_support: Number of shots for support set (default: 4)
+            k_query: Number of shots for query set (default: 1)
+
+        Returns:
+            support_dataset: Support set dataset
+            query_dataset: Query set dataset
+        """
+        assert k_support + k_query <= 5, \
+            f"k_support ({k_support}) + k_query ({k_query}) must be <= 5"
+
+        # Get domain for this session
+        domain = self._get_domain_for_session(task_id)
+
+        # Get training data from the domain
+        x, y = self.full_dataset.get_domain_data(domain, source='train')
+        x = np.array(x)
+        y = np.array(y)
+
+        # Get class indices for this task
+        class_idx = self.class_index_in_task[task_id]
+
+        # Split data into support and query
+        support_x, support_y = [], []
+        query_x, query_y = [], []
+
+        for c in class_idx:
+            idx_c = np.where(y == c)[0]
+
+            if len(idx_c) < k_support + k_query:
+                print(f'Warning: Not enough samples for class {c}, skipping...')
+                continue
+
+            # First k_support samples for support set
+            support_idx = idx_c[:k_support]
+            support_x.append(x[support_idx])
+            support_y.append(y[support_idx])
+
+            # Next k_query samples for query set
+            query_idx = idx_c[k_support:k_support + k_query]
+            query_x.append(x[query_idx])
+            query_y.append(y[query_idx])
+
+        # Concatenate
+        if len(support_x) > 0:
+            support_x = np.concatenate(support_x)
+            support_y = np.concatenate(support_y)
+        else:
+            support_x = np.array([])
+            support_y = np.array([])
+
+        if len(query_x) > 0:
+            query_x = np.concatenate(query_x)
+            query_y = np.concatenate(query_y)
+        else:
+            query_x = np.array([])
+            query_y = np.array([])
+
+        # Build class to task mapping
+        class_to_task_id = self._build_class_to_task_map(class_idx)
+
+        # Create datasets
+        support_dataset = TaskDataset(
+            support_x, support_y,
+            self.train_transform,
+            class_to_task_id,
+            self.class_names
+        )
+
+        query_dataset = TaskDataset(
+            query_x, query_y,
+            self.test_transform,  # Use test transform for query
+            class_to_task_id,
+            self.class_names
+        )
+
+        return support_dataset, query_dataset
+
+    def get_meta_dataloader(self, dataset, batch_size=None, shuffle=False):
+        """
+        Get dataloader for meta-learning datasets.
+
+        Args:
+            dataset: Dataset object
+            batch_size: Batch size (if None, use test batch size)
+            shuffle: Whether to shuffle data
+
+        Returns:
+            DataLoader
+        """
+        if batch_size is None:
+            batch_size = self.test_batchsize
+
+        loader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=self.num_workers,
+            drop_last=False,
+            pin_memory=True
+        )
+
+        return loader
+
 
 class TaskDataset(Dataset):
     """Dataset class for a specific task/session."""
