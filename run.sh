@@ -21,4 +21,6 @@
 #
 #python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge_ensemble.yaml --hyperparam_sweep
 
-python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge_meta.yaml --meta --router_checkpoint outputs/router.pth
+python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge_meta.yaml --meta
+
+#python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge_meta.yaml --meta --router_checkpoint outputs/router.pth

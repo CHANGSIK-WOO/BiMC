@@ -54,6 +54,10 @@ class RouterNetwork(nn.Module):
             nn.Sigmoid()  # Output in [0, 1]
         )
 
+        # Initialize gamma head to output around 0.5-0.6
+        with torch.no_grad():
+            self.gamma_head[-2].bias.fill_(0.5)
+
         # Initialize kernel head to output Laplacian-like kernel initially
         self._initialize_kernel_head()
 
