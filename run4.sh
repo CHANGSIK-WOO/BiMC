@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=bimc
+#SBATCH --job-name=bimc4
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
 #SBATCH -p batch
@@ -21,6 +21,6 @@
 #
 #python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge_ensemble.yaml --hyperparam_sweep
 
-python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge_meta.yaml --meta
+python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge_meta4.yaml --meta
 
 #python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge_meta.yaml --meta --router_checkpoint outputs/router.pth
