@@ -345,6 +345,7 @@ class Runner:
 
         # Freeze all except router
         self.model.freeze_all_except_router()
+        self.model.meta_training = True
 
         # Get meta-learning config
         meta_cfg = self.cfg.TRAINER.BiMC.META
@@ -478,6 +479,7 @@ class Runner:
 
         # Enable router for evaluation
         self.model.enable_router()
+        self.model.meta_training = False
 
     def _meta_inner_step(self, support_loader, query_loader, k_support, k_query):
         """

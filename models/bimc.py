@@ -51,6 +51,7 @@ class BiMC(nn.Module):
         self.device = device
         self.task_id = 0
         self.building = True
+        self.meta_training = False
         print(f"Loading CLIP (backbone: {cfg.MODEL.BACKBONE.NAME})")
         print(f"Prompt template:{template}")
         self.template = template
@@ -141,7 +142,12 @@ class BiMC(nn.Module):
 
             # ---- EDGE: Invariant features (LoG edge extraction) ----
             if self.edge:
-                edge_feat = self._extract_edge_features(images, labels)
+                # Use router if enabled
+                if self.use_router:
+                    router_params = self.predict_router_params(images)
+                    edge_feat = self._extract_edge_features(images, labels, router_params)
+                else:
+                    edge_feat = self._extract_edge_features(images, labels)
                 all_edge_features.append(edge_feat)
 
         # ---- merge ----
@@ -251,7 +257,7 @@ class BiMC(nn.Module):
         edge_img = edge.repeat(1, 3, 1, 1)
 
         # === Optional image saving ===
-        if self.save_imag:
+        if not self.meta_training and self.save_imag:
             for i in range(images.size(0)):
                 label = labels[i].item()
                 if label not in self.save_class:
@@ -267,7 +273,8 @@ class BiMC(nn.Module):
                 edge_path, idx = get_unique_path(f"outputs/{vis_dir}/edge/{self.task_id}/{label}")
                 if idx < 100:
                     vutils.save_image(edge_img[i].clamp(0, 1), edge_path)
-
+        # if not self.meta_training:
+        #     print(router_params)
         # === Encode with CLIP ===
         inv_feat = self.clip_model.encode_image(edge_img)
         inv_feat = F.normalize(inv_feat, dim=-1)
@@ -453,12 +460,23 @@ class BiMC(nn.Module):
         # EDGE: Domain-invariant feature fusion
         # ============================================================
         if self.edge:
-            gamma = self.gamma
-            if self.inference_edge:
-                edge_feat = self._extract_edge_features(images, labels)
-                edge_feat = F.normalize(edge_feat, dim=-1)
-                img_feat = (1 - gamma) * img_feat + gamma * edge_feat
-                img_feat = F.normalize(img_feat, dim=-1)
+            # Use router if enabled, otherwise use config gamma
+            if self.use_router:
+                router_params = self.predict_router_params(images)
+                gamma = router_params['gamma']
+
+                if self.inference_edge:
+                    edge_feat = self._extract_edge_features(images, labels, router_params)
+                    edge_feat = F.normalize(edge_feat, dim=-1)
+                    img_feat = (1 - gamma) * img_feat + gamma * edge_feat
+                    img_feat = F.normalize(img_feat, dim=-1)
+            else:
+                gamma = self.gamma
+                if self.inference_edge:
+                    edge_feat = self._extract_edge_features(images, labels)
+                    edge_feat = F.normalize(edge_feat, dim=-1)
+                    img_feat = (1 - gamma) * img_feat + gamma * edge_feat
+                    img_feat = F.normalize(img_feat, dim=-1)
 
             fused_proto = (1 - gamma) * fused_proto + gamma * edge_proto
         # ============================================================

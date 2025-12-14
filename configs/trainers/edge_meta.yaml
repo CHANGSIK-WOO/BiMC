@@ -48,7 +48,7 @@ TRAINER:
       SUPPORT_SHOT: 4    # Number of samples for prototype in inner loop
       QUERY_SHOT: 1      # Number of samples for loss computation
       ROUTER_HIDDEN_DIM: 256  # Hidden dimension for router network
-      BATCH_SIZE: 16     # Small batch size for meta-learning only
+      BATCH_SIZE: 35     # Small batch size for meta-learning only
 
     # EDGE always uses ensemble (same condition as bimc_ensemble baseline)
     USING_ENSEMBLE: False
