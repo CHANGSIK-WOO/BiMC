@@ -36,7 +36,7 @@ TRAINER:
     # EDGE specific parameters (these will be predicted by router)
     EDGE:
       GAMMA: 0.5  # Default value (will be overridden by router)
-      INFERENCE_EDGE: False  # Extract edge features during inference
+      INFERENCE_EDGE: True  # Extract edge features during inference
 
     # Meta-learning specific parameters
     META:
