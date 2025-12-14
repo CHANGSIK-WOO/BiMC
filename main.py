@@ -181,30 +181,26 @@ def main():
         # Single run without hyperparameter sweep
         engine = Runner(cfg)
 
-        if args.meta or args.router_checkpoint:
+        if args.meta:
             # Meta-learning or checkpoint-based mode
-
             if args.router_checkpoint:
-                # Load router from checkpoint (skip meta-learning)
-                print("\n" + "=" * 60)
-                print("Loading Router from Checkpoint")
-                print(f"Checkpoint: {args.router_checkpoint}")
-                print("=" * 60 + "\n")
-
-                engine.load_router_checkpoint(args.router_checkpoint)
-
+                ckpt = args.router_checkpoint
             else:
                 # Meta-learning mode: train router network
                 print("\n" + "=" * 60)
                 print("Starting Meta-Learning for Router Network")
                 print("=" * 60 + "\n")
-
-                engine.meta_run()
-
+                ckpt = engine.meta_run()
                 print("\n" + "=" * 60)
                 print("Meta-Learning Completed!")
                 print("Now running evaluation with trained router...")
                 print("=" * 60 + "\n")
+            # Load router from checkpoint (skip meta-learning)
+            print("\n" + "=" * 60)
+            print("Loading Router from Checkpoint")
+            print(f"Checkpoint: {ckpt}")
+            print("=" * 60 + "\n")
+            engine.load_router_checkpoint(ckpt)
 
             # After meta-learning or loading checkpoint, run evaluation with router
             engine.run(use_meta_router=True)

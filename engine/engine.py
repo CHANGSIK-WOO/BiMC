@@ -475,11 +475,13 @@ class Runner:
         train_name = os.path.splitext(os.path.basename(self.cfg.TRAIN_CFG_PATH))[0]
         prefix = f"{data_name}_{train_name}"
         output_dir = os.path.join("outputs", prefix)
-        self.save_router_checkpoint(output_dir)
+        latest_path = self.save_router_checkpoint(output_dir)
 
         # Enable router for evaluation
         self.model.enable_router()
         self.model.meta_training = False
+
+        return latest_path
 
     def _meta_inner_step(self, support_loader, query_loader, k_support, k_query):
         """
@@ -683,14 +685,12 @@ class Runner:
 
         import os
         # Create router_checkpoints subdirectory
-        checkpoint_dir = os.path.join(output_dir, "router_checkpoints")
+        checkpoint_dir = output_dir
         os.makedirs(checkpoint_dir, exist_ok=True)
 
         # Create checkpoint filename with timestamp
         import time
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        checkpoint_path = os.path.join(checkpoint_dir, f"router_{timestamp}.pth")
-
         # Save router state dict
         checkpoint = {
             'router_state_dict': self.model.router_network.state_dict(),
@@ -701,13 +701,11 @@ class Runner:
             }
         }
 
-        torch.save(checkpoint, checkpoint_path)
-        print(f"\n[Checkpoint] Router saved to: {checkpoint_path}")
-
         # Also save as 'latest'
         latest_path = os.path.join(checkpoint_dir, "router_latest.pth")
         torch.save(checkpoint, latest_path)
         print(f"[Checkpoint] Latest router saved to: {latest_path}\n")
+        return latest_path
 
     def load_router_checkpoint(self, checkpoint_path):
         """
