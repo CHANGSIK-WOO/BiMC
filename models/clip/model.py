@@ -221,12 +221,26 @@ class VisionTransformer(nn.Module):
         self.ln_post = LayerNorm(width)
         self.proj = nn.Parameter(scale * torch.randn(width, output_dim))
 
+        # Prompt support: stores the current learnable prompt
+        self.current_prompt = None  # Will be set externally (B, prompt_len, width)
+
     # Modified by Torres Yu in Oct 5, 2022
+    # Modified for prompt-based meta-learning
     def forward(self, x: torch.Tensor, all_layer_outputs=False):
         x = self.conv1(x)  # shape = [*, width, grid, grid]
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
+
+        # Inject learnable prompts after class token if available
+        if self.current_prompt is not None:
+            # current_prompt: (B, prompt_len, width) or (prompt_len, width)
+            prompt = self.current_prompt
+            if prompt.dim() == 2:
+                # Expand to batch size
+                prompt = prompt.unsqueeze(0).expand(x.shape[0], -1, -1)
+            x = torch.cat([x[:, :1, :], prompt.to(x.dtype), x[:, 1:, :]], dim=1)  # Insert after class token
+
         x = x + self.positional_embedding.to(x.dtype)
         x = self.ln_pre(x)
 

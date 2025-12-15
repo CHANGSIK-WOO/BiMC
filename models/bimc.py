@@ -86,13 +86,21 @@ class BiMC(nn.Module):
             self.inference_edge = False
             self.edge_sigma = 1.0
 
-        # Meta-learning: Router network
-        self.use_router = False
-        self.router_network = None
-        if 'edge_meta' in self.method:
-            from models.router import RouterNetwork
-            self.router_network = RouterNetwork(cfg, input_dim=512).to(self.device)
-            print(f"Meta-learning enabled: RouterNetwork initialized")
+        # Meta-learning: Learnable Prompts
+        self.use_prompts = False
+        self.prompt_pool = None  # Dictionary to store per-task prompts
+        if 'prompt' in self.method:
+            meta_cfg = cfg.TRAINER.BiMC.META
+            prompt_length = meta_cfg.PROMPT_LENGTH
+            prompt_dim = meta_cfg.PROMPT_DIM
+
+            # Initialize prompt pool (will be populated during meta-training)
+            self.prompt_pool = {}
+            self.prompt_length = prompt_length
+            self.prompt_dim = prompt_dim
+
+            print(f"Meta-learning enabled: Learnable Prompts initialized")
+            print(f"Prompt length: {prompt_length}, Prompt dim: {prompt_dim}")
 
         # Logging
         self.save_imag = False
@@ -143,12 +151,8 @@ class BiMC(nn.Module):
 
             # ---- EDGE: Invariant features (LoG edge extraction) ----
             if self.edge:
-                # Use router if enabled
-                if self.use_router:
-                    router_params = self.predict_router_params(images)
-                    edge_feat = self._extract_edge_features(images, labels, router_params)
-                else:
-                    edge_feat = self._extract_edge_features(images, labels)
+                # Always use fixed parameters (no router)
+                edge_feat = self._extract_edge_features(images, labels)
                 all_edge_features.append(edge_feat)
 
         # ---- merge ----
@@ -195,32 +199,19 @@ class BiMC(nn.Module):
         }
 
     @torch.no_grad()
-    def _extract_edge_features(self, images, labels, router_params=None):
+    def _extract_edge_features(self, images, labels):
         """
         Generate domain-invariant EDGE structural features using
-        Laplacian of Gaussian (LoG) edge extraction.
-        This provides stronger, noise-robust invariant cues
-        than raw Sobel edges.
+        Laplacian of Gaussian (LoG) edge extraction with FIXED hyperparameters.
 
         Args:
             images: Input images (B, 3, H, W)
             labels: Labels (B,)
-            router_params: Optional dict containing:
-                - 'sigma': Gaussian blur sigma (scalar or (B,))
-                - 'kernel': Laplacian kernel (1,1,3,3) or (B,1,3,3)
-                - 'gamma': Edge fusion weight (not used here, but for consistency)
-
-        If router_params is provided, use those parameters.
-        Otherwise, use default self.edge_sigma and standard Laplacian kernel.
         """
 
-        # Determine sigma and kernel
-        if router_params is not None and self.use_router:
-            sigma = router_params.get('sigma', self.edge_sigma)
-            laplacian_kernel = router_params.get('kernel', None)
-        else:
-            sigma = self.edge_sigma
-            laplacian_kernel = None
+        # Use fixed sigma from config
+        sigma = self.edge_sigma
+        laplacian_kernel = None
 
         # === Gaussian smoothing ===
         # Note: torchvision GaussianBlur doesn't support batched sigma
@@ -458,30 +449,15 @@ class BiMC(nn.Module):
         )
 
         # ============================================================
-        # EDGE: Domain-invariant feature fusion
+        # EDGE: Domain-invariant feature fusion (fixed gamma)
         # ============================================================
         if self.edge:
-            # Use router if enabled, otherwise use config gamma
-            if self.use_router:
-                router_params = self.predict_router_params(images)
-                gamma = router_params['gamma']
-
-                # Track router params during inference (not building)
-                if not self.building:
-                    self.track_router_params(router_params)
-
-                if self.inference_edge:
-                    edge_feat = self._extract_edge_features(images, labels, router_params)
-                    edge_feat = F.normalize(edge_feat, dim=-1)
-                    img_feat = (1 - gamma) * img_feat + gamma * edge_feat
-                    img_feat = F.normalize(img_feat, dim=-1)
-            else:
-                gamma = self.gamma
-                if self.inference_edge:
-                    edge_feat = self._extract_edge_features(images, labels)
-                    edge_feat = F.normalize(edge_feat, dim=-1)
-                    img_feat = (1 - gamma) * img_feat + gamma * edge_feat
-                    img_feat = F.normalize(img_feat, dim=-1)
+            gamma = self.gamma
+            if self.inference_edge:
+                edge_feat = self._extract_edge_features(images, labels)
+                edge_feat = F.normalize(edge_feat, dim=-1)
+                img_feat = (1 - gamma) * img_feat + gamma * edge_feat
+                img_feat = F.normalize(img_feat, dim=-1)
 
             fused_proto = (1 - gamma) * fused_proto + gamma * edge_proto
         # ============================================================
@@ -532,105 +508,69 @@ class BiMC(nn.Module):
         return data, targets
 
     # ======================================================
-    # Meta-Learning: Router Network Methods
+    # Meta-Learning: Learnable Prompt Methods
     # ======================================================
 
-    def predict_router_params(self, images):
+    def create_prompt(self, task_id=None):
         """
-        Predict task-adaptive hyperparameters using router network.
+        Create a new learnable prompt for a task.
 
         Args:
-            images: Input images (B, 3, H, W)
+            task_id: Task ID (optional, for naming)
 
         Returns:
-            router_params: Dict containing sigma, kernel, gamma
+            prompt: nn.Parameter (prompt_length, prompt_dim)
         """
-        if self.router_network is None:
-            raise ValueError("Router network not initialized!")
+        # Initialize prompt with small random values
+        scale = self.prompt_dim ** -0.5
+        prompt = nn.Parameter(scale * torch.randn(self.prompt_length, self.prompt_dim, device=self.device))
 
-        # Extract image features with CLIP (frozen)
-        with torch.no_grad():
-            img_features = self.clip_model.encode_image(images)
-            img_features = F.normalize(img_features, dim=-1)
+        if task_id is not None:
+            print(f"[Prompt] Created new prompt for task {task_id}: shape {prompt.shape}")
 
-        # Predict parameters with router (learnable)
-        sigma, kernel, gamma = self.router_network.forward_aggregated(img_features)
+        return prompt
 
-        router_params = {
-            'sigma': sigma,
-            'kernel': kernel,
-            'gamma': gamma
-        }
+    def set_prompt(self, prompt):
+        """
+        Set the current prompt for visual encoder.
 
-        return router_params
+        Args:
+            prompt: Tensor (prompt_length, prompt_dim) or (B, prompt_length, prompt_dim)
+        """
+        # Set prompt in the CLIP visual encoder
+        if hasattr(self.clip_model, 'visual'):
+            self.clip_model.visual.current_prompt = prompt
+        else:
+            print("[Warning] CLIP model does not have visual encoder with prompt support")
 
-    def enable_router(self):
-        """Enable router network for inference."""
-        self.use_router = True
-        print("[BiMC] Router network enabled for inference")
+    def clear_prompt(self):
+        """Clear the current prompt from visual encoder."""
+        if hasattr(self.clip_model, 'visual'):
+            self.clip_model.visual.current_prompt = None
 
-    def disable_router(self):
-        """Disable router network for inference."""
-        self.use_router = False
-        print("[BiMC] Router network disabled for inference")
+    def freeze_all_except_prompt(self, prompt):
+        """
+        Freeze all parameters except the given prompt.
 
-    def freeze_all_except_router(self):
-        """Freeze all parameters except router network."""
+        Args:
+            prompt: nn.Parameter to keep trainable
+        """
         # Freeze CLIP model
         for param in self.clip_model.parameters():
             param.requires_grad = False
 
-        # Unfreeze router network
-        if self.router_network is not None:
-            for param in self.router_network.parameters():
-                param.requires_grad = True
+        # Unfreeze prompt
+        prompt.requires_grad = True
 
-        print("[BiMC] Froze all parameters except router network")
+        print("[BiMC] Froze all parameters except prompt")
 
-    def init_router_tracking(self):
-        """Initialize router parameter tracking."""
-        self.router_param_accumulator = {
-            'sigma': [],
-            'kernel': [],
-            'gamma': []
-        }
+    def enable_prompts(self):
+        """Enable prompts for inference."""
+        self.use_prompts = True
+        print("[BiMC] Prompts enabled for inference")
 
-    def track_router_params(self, router_params):
-        """
-        Track router parameters for averaging.
-
-        Args:
-            router_params: Dict containing sigma, kernel, gamma
-        """
-        if not hasattr(self, 'router_param_accumulator'):
-            self.init_router_tracking()
-
-        self.router_param_accumulator['sigma'].append(router_params['sigma'].detach().cpu().item())
-        self.router_param_accumulator['kernel'].append(router_params['kernel'].detach().cpu())
-        self.router_param_accumulator['gamma'].append(router_params['gamma'].detach().cpu().item())
-
-    def get_avg_router_params(self):
-        """
-        Get averaged router parameters and reset accumulator.
-
-        Returns:
-            dict: Averaged sigma, kernel, gamma
-        """
-        if not hasattr(self, 'router_param_accumulator') or len(self.router_param_accumulator['sigma']) == 0:
-            return None
-
-        avg_sigma = float(np.mean(self.router_param_accumulator['sigma']))
-        avg_gamma = float(np.mean(self.router_param_accumulator['gamma']))
-
-        # Average kernel: stack and mean
-        kernel_stack = torch.stack(self.router_param_accumulator['kernel'], dim=0)
-        avg_kernel = kernel_stack.mean(dim=0).squeeze().tolist()  # Convert to list for JSON
-
-        # Reset accumulator
-        self.init_router_tracking()
-
-        return {
-            'sigma': avg_sigma,
-            'kernel': avg_kernel,
-            'gamma': avg_gamma
-        }
+    def disable_prompts(self):
+        """Disable prompts for inference."""
+        self.use_prompts = False
+        self.clear_prompt()
+        print("[BiMC] Prompts disabled for inference")

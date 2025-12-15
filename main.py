@@ -73,7 +73,10 @@ def extend_cfg(cfg):
 
     # EDGE-specific config
     cfg.TRAINER.BiMC.EDGE = CN()
+    cfg.TRAINER.BiMC.EDGE.ENABLED = True
+    cfg.TRAINER.BiMC.EDGE.SIGMA = 1.0
     cfg.TRAINER.BiMC.EDGE.GAMMA = 0.6
+    cfg.TRAINER.BiMC.EDGE.KERNEL_TYPE = "laplacian"
     cfg.TRAINER.BiMC.EDGE.INFERENCE_EDGE = False
     cfg.TRAINER.BiMC.EDGE.SAVE_IMAGE = False
     cfg.TRAINER.BiMC.EDGE.SAVE_CLASSES = []
@@ -85,9 +88,12 @@ def extend_cfg(cfg):
     cfg.TRAINER.BiMC.META.INNER_LR = 0.01
     cfg.TRAINER.BiMC.META.OUTER_LR = 0.001
     cfg.TRAINER.BiMC.META.INNER_STEPS = 3
-    cfg.TRAINER.BiMC.META.SUPPORT_SHOT = 4
-    cfg.TRAINER.BiMC.META.QUERY_SHOT = 1
-    cfg.TRAINER.BiMC.META.ROUTER_HIDDEN_DIM = 256
+    cfg.TRAINER.BiMC.META.BASE_SUPPORT_CLASSES = 200
+    cfg.TRAINER.BiMC.META.BASE_QUERY_CLASSES = 40
+    cfg.TRAINER.BiMC.META.INC_SUPPORT_CLASSES = 30
+    cfg.TRAINER.BiMC.META.INC_QUERY_CLASSES = 5
+    cfg.TRAINER.BiMC.META.PROMPT_LENGTH = 4
+    cfg.TRAINER.BiMC.META.PROMPT_DIM = 512
     cfg.TRAINER.BiMC.META.BATCH_SIZE = 16  # Small batch size for meta-learning
 
 
@@ -121,9 +127,9 @@ def main():
     parser.add_argument('--hyperparam_sweep', action='store_true',
                         help="Run hyperparameter sweep for edge method")
     parser.add_argument('--meta', action='store_true',
-                        help="Run meta-learning for router network")
-    parser.add_argument('--router_checkpoint', type=str, default=None,
-                        help="Path to router checkpoint (skips meta-learning if provided)")
+                        help="Run meta-learning for prompt learning")
+    parser.add_argument('--prompt_checkpoint', type=str, default=None,
+                        help="Path to prompt checkpoint (skips meta-learning if provided)")
 
     args = parser.parse_args()
 
@@ -183,27 +189,27 @@ def main():
 
         if args.meta:
             # Meta-learning or checkpoint-based mode
-            if args.router_checkpoint:
-                ckpt = args.router_checkpoint
+            if args.prompt_checkpoint:
+                ckpt = args.prompt_checkpoint
             else:
-                # Meta-learning mode: train router network
+                # Meta-learning mode: train prompts
                 print("\n" + "=" * 60)
-                print("Starting Meta-Learning for Router Network")
+                print("Starting Meta-Learning for Learnable Prompts")
                 print("=" * 60 + "\n")
                 ckpt = engine.meta_run()
                 print("\n" + "=" * 60)
                 print("Meta-Learning Completed!")
-                print("Now running evaluation with trained router...")
+                print("Now running evaluation with trained prompts...")
                 print("=" * 60 + "\n")
-            # Load router from checkpoint (skip meta-learning)
+            # Load prompts from checkpoint (skip meta-learning)
             print("\n" + "=" * 60)
-            print("Loading Router from Checkpoint")
+            print("Loading Prompts from Checkpoint")
             print(f"Checkpoint: {ckpt}")
             print("=" * 60 + "\n")
-            engine.load_router_checkpoint(ckpt)
+            engine.load_prompt_checkpoint(ckpt)
 
-            # After meta-learning or loading checkpoint, run evaluation with router
-            engine.run(use_meta_router=True)
+            # After meta-learning or loading checkpoint, run evaluation with prompts
+            engine.run(use_meta_prompts=True)
         else:
             # Normal run without meta-learning
             engine.run()

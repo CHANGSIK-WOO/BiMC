@@ -324,22 +324,22 @@ class DGFSCILDataManager:
 
         return support_domains, query_domain, support_tasks, query_task
 
-    def get_k_shot_split(self, task_id, k_support=4, k_query=1):
+    def get_class_split(self, task_id, num_support_classes, num_query_classes):
         """
-        Split 5-shot data into k_support + k_query for meta-learning.
+        Split classes into support and query sets for prompt meta-learning.
+
+        For base session (task 0): 200 support classes / 40 query classes
+        For incremental sessions (task 1,2,3): 30 support classes / 5 query classes
 
         Args:
             task_id: Session ID
-            k_support: Number of shots for support set (default: 4)
-            k_query: Number of shots for query set (default: 1)
+            num_support_classes: Number of classes for support set
+            num_query_classes: Number of classes for query set
 
         Returns:
-            support_dataset: Support set dataset
-            query_dataset: Query set dataset
+            support_dataset: Support set dataset (with all samples from support classes)
+            query_dataset: Query set dataset (with all samples from query classes)
         """
-        assert k_support + k_query <= 5, \
-            f"k_support ({k_support}) + k_query ({k_query}) must be <= 5"
-
         # Get domain for this session
         domain = self._get_domain_for_session(task_id)
 
@@ -351,26 +351,34 @@ class DGFSCILDataManager:
         # Get class indices for this task
         class_idx = self.class_index_in_task[task_id]
 
-        # Split data into support and query
+        # Ensure we have enough classes
+        total_classes = len(class_idx)
+        assert num_support_classes + num_query_classes <= total_classes, \
+            f"Support ({num_support_classes}) + Query ({num_query_classes}) must be <= {total_classes}"
+
+        # Randomly shuffle classes (deterministic with numpy seed)
+        import numpy as np
+        shuffled_classes = np.random.permutation(class_idx)
+
+        # Split classes
+        support_classes = shuffled_classes[:num_support_classes]
+        query_classes = shuffled_classes[num_support_classes:num_support_classes + num_query_classes]
+
+        # Collect all samples from support classes
         support_x, support_y = [], []
-        query_x, query_y = [], []
-
-        for c in class_idx:
+        for c in support_classes:
             idx_c = np.where(y == c)[0]
+            if len(idx_c) > 0:
+                support_x.append(x[idx_c])
+                support_y.append(y[idx_c])
 
-            if len(idx_c) < k_support + k_query:
-                print(f'Warning: Not enough samples for class {c}, skipping...')
-                continue
-
-            # First k_support samples for support set
-            support_idx = idx_c[:k_support]
-            support_x.append(x[support_idx])
-            support_y.append(y[support_idx])
-
-            # Next k_query samples for query set
-            query_idx = idx_c[k_support:k_support + k_query]
-            query_x.append(x[query_idx])
-            query_y.append(y[query_idx])
+        # Collect all samples from query classes
+        query_x, query_y = [], []
+        for c in query_classes:
+            idx_c = np.where(y == c)[0]
+            if len(idx_c) > 0:
+                query_x.append(x[idx_c])
+                query_y.append(y[idx_c])
 
         # Concatenate
         if len(support_x) > 0:
@@ -404,6 +412,9 @@ class DGFSCILDataManager:
             class_to_task_id,
             self.class_names
         )
+
+        print(f"[Class Split] Task {task_id}: {num_support_classes} support classes ({len(support_x)} samples), "
+              f"{num_query_classes} query classes ({len(query_x)} samples)")
 
         return support_dataset, query_dataset
 

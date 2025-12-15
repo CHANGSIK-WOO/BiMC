@@ -106,7 +106,7 @@ class Runner:
         return result
 
     @torch.no_grad()
-    def run(self, hyperparam_dict=None, use_meta_router=False):
+    def run(self, hyperparam_dict=None, use_meta_prompts=False):
         print(f'Start inferencing on all tasks: [0, {self.data_manager.num_tasks - 1}]')
         state_dict_list = []
         # get dataset and trainer names
@@ -120,19 +120,24 @@ class Runner:
         if hyperparam_dict is not None:
             self._apply_hyperparameters(hyperparam_dict)
 
-        # Enable router for inference if requested
-        if use_meta_router:
-            if hasattr(self.model, 'router_network') and self.model.router_network is not None:
-                self.model.enable_router()
-                print("[Runner] Using trained router network for inference")
-            else:
-                print("[Warning] Router requested but not available, using default parameters")
-                use_meta_router = False
+        # Enable prompts for inference if requested
+        if use_meta_prompts:
+            if hasattr(self.model, 'prompt_pool') and self.model.prompt_pool is not None:
+                self.model.enable_prompts()
+                print("[Runner] Using trained prompts for inference")
 
-        # Initialize router parameter tracking
-        router_params_dict = {}
-        if use_meta_router:
-            self.model.init_router_tracking()
+                # Average all task prompts for inference
+                if len(self.model.prompt_pool) > 0:
+                    prompt_tensors = [p.data for p in self.model.prompt_pool.values()]
+                    avg_prompt = torch.stack(prompt_tensors, dim=0).mean(dim=0)
+                    self.model.set_prompt(avg_prompt)
+                    print(f"[Runner] Using averaged prompt from {len(self.model.prompt_pool)} tasks")
+                else:
+                    print("[Warning] Prompt pool is empty")
+                    use_meta_prompts = False
+            else:
+                print("[Warning] Prompts requested but not available, using default")
+                use_meta_prompts = False
 
         for task_id in range(self.data_manager.num_tasks):
             print(f"TASK {task_id}")
@@ -157,13 +162,6 @@ class Runner:
             elapsed_time = end_time - start_time
             print(f'+++++++++++  task {task_id}, time: {elapsed_time} ++++++++++++++++')
 
-            # Collect router params after task inference
-            if use_meta_router:
-                domain_name = self.data_manager._get_domain_for_session(task_id)
-                avg_router_params = self.model.get_avg_router_params()
-                if avg_router_params is not None:
-                    router_params_dict[f'task_{task_id}_{domain_name}_inference'] = avg_router_params
-                    print(f"[Router] Task {task_id} ({domain_name}) inference - gamma: {avg_router_params['gamma']:.4f}, sigma: {avg_router_params['sigma']:.4f}")
 
             print(f'=> Task [{task_id}], Acc: {acc["mean_acc"]:.3f}')
             self.acc_list.append(round(acc["mean_acc"], 3))
@@ -188,12 +186,6 @@ class Runner:
                 acc = self.inference_target_domain(target_domain, merged_state_dict)
                 target_acc_dict[target_domain] = acc
 
-                # Collect router params after target domain inference
-                if use_meta_router:
-                    avg_router_params = self.model.get_avg_router_params()
-                    if avg_router_params is not None:
-                        router_params_dict[f'target_{target_domain}'] = avg_router_params
-                        print(f"[Router] Target {target_domain} - gamma: {avg_router_params['gamma']:.4f}, sigma: {avg_router_params['sigma']:.4f}")
 
                 print(f'=> {target_domain} Acc: {acc["mean_acc"]:.3f}')
                 print(f'   Task-wise: {acc["task_acc"]}')
@@ -231,11 +223,6 @@ class Runner:
         # Add hyperparameters to save_dict if provided
         if hyperparam_dict is not None:
             save_dict["hyperparameters"] = hyperparam_dict
-
-        # Add router parameters if using meta router
-        if use_meta_router and len(router_params_dict) > 0:
-            save_dict["router_params"] = router_params_dict
-            print(f"\n[Router] Saved {len(router_params_dict)} router parameter entries")
 
         # Generate filename from hyperparameters
         if hyperparam_dict is not None:
@@ -354,24 +341,24 @@ class Runner:
 
     def meta_run(self):
         """
-        Meta-learning training loop for router network.
+        Meta-learning training loop for learnable prompts.
 
-        Episode structure:
-            - 4 training domains: [real, infograph, painting, sketch]
-            - Each episode: 3 support domains + 1 query domain
-            - Inner loop: Update on support domains (3 domains sequentially)
-            - Outer loop: Meta-update on query domain
+        Task structure:
+            - Task 1 (base): Train prompt with 200 support / 40 query class split
+            - Task 2,3,4 (incremental): Train prompts with 30 support / 5 query class split
+            - Each incremental prompt starts from the base prompt (not previous task)
+
+        Meta-objective:
+            - Maximize image-text embedding similarity (cosine similarity)
         """
         print("\n" + "=" * 60)
-        print("Meta-Learning: Training Router Network")
+        print("Meta-Learning: Training Learnable Prompts")
         print("=" * 60)
 
         # Ensure this is DG-FSCIL dataset
         if not self.is_dgfscil:
             raise ValueError("Meta-learning is only supported for DG-FSCIL (DomainNet) dataset!")
 
-        # Freeze all except router
-        self.model.freeze_all_except_router()
         self.model.meta_training = True
 
         # Get meta-learning config
@@ -380,369 +367,342 @@ class Runner:
         inner_lr = meta_cfg.INNER_LR
         outer_lr = meta_cfg.OUTER_LR
         inner_steps = meta_cfg.INNER_STEPS
-        k_support = meta_cfg.SUPPORT_SHOT
-        k_query = meta_cfg.QUERY_SHOT
 
-        # Setup optimizer for router network
-        router_optimizer = torch.optim.Adam(
-            self.model.router_network.parameters(),
-            lr=outer_lr
-        )
+        base_support_classes = meta_cfg.BASE_SUPPORT_CLASSES
+        base_query_classes = meta_cfg.BASE_QUERY_CLASSES
+        inc_support_classes = meta_cfg.INC_SUPPORT_CLASSES
+        inc_query_classes = meta_cfg.INC_QUERY_CLASSES
 
         print(f"Episodes: {num_episodes}")
         print(f"Inner LR: {inner_lr}, Outer LR: {outer_lr}")
         print(f"Inner Steps: {inner_steps}")
-        print(f"Support/Query Split: {k_support}/{k_query}")
+        print(f"Base split: {base_support_classes} support / {base_query_classes} query")
+        print(f"Inc split: {inc_support_classes} support / {inc_query_classes} query")
         print("=" * 60 + "\n")
 
-        # Meta-training loop
-        for episode in range(num_episodes):
-            print(f"\n[Episode {episode + 1}/{num_episodes}]")
+        # ==========================================
+        # Sequential Task Training: Task 1 → Task 2 → Task 3 → Task 4
+        # ==========================================
 
-            # Sample support and query domains
-            support_domains, query_domain, support_tasks, query_task = \
-                self.data_manager.get_meta_episode_domains()
+        base_prompt = None  # Will be saved after task 1 training
 
-            print(f"  Support domains: {support_domains} (tasks: {support_tasks})")
-            print(f"  Query domain: {query_domain} (task: {query_task})")
+        # Train each task sequentially
+        for task_id in range(self.data_manager.num_tasks):
+            print(f"\n{'=' * 60}")
+            print(f"Training Task {task_id}")
+            print(f"{'=' * 60}")
 
-            # ==========================================
-            # Inner Loop: Adapt on Support Domains
-            # ==========================================
-            # Save initial router parameters
-            initial_params = {
-                name: param.clone().detach()
-                for name, param in self.model.router_network.named_parameters()
-            }
+            # Determine support/query class split
+            if task_id == 0:  # Base task
+                num_support = base_support_classes
+                num_query = base_query_classes
+            else:  # Incremental tasks
+                num_support = inc_support_classes
+                num_query = inc_query_classes
 
-            # Inner loop: Train on each support domain sequentially
-            for sup_idx, (sup_domain, sup_task) in enumerate(zip(support_domains, support_tasks)):
-                print(f"\n  Inner Loop [{sup_idx + 1}/3]: {sup_domain}")
+            # Create a new prompt for this task
+            current_prompt = self.model.create_prompt(task_id=task_id)
 
-                # Get support and query split for this domain
-                support_dataset, query_dataset_inner = \
-                    self.data_manager.get_k_shot_split(sup_task, k_support, k_query)
+            # Initialize from base prompt for incremental tasks
+            if task_id > 0 and base_prompt is not None:
+                with torch.no_grad():
+                    current_prompt.data.copy_(base_prompt.data)
+                print(f"[Task {task_id}] Initialized prompt from base task")
 
-                # Use meta-specific batch size
+            # Setup optimizer for this prompt only
+            prompt_optimizer = torch.optim.Adam([current_prompt], lr=outer_lr)
+
+            # Freeze CLIP model
+            self.model.freeze_all_except_prompt(current_prompt)
+
+            # Meta-training episodes for this task
+            for episode in range(num_episodes):
+                print(f"\n[Task {task_id}, Episode {episode + 1}/{num_episodes}]")
+
+                # Get class split for this task
+                support_dataset, query_dataset = \
+                    self.data_manager.get_class_split(task_id, num_support, num_query)
+
                 meta_batch_size = meta_cfg.BATCH_SIZE
 
                 support_loader = self.data_manager.get_meta_dataloader(
-                    support_dataset, batch_size=meta_batch_size, shuffle=False
+                    support_dataset, batch_size=meta_batch_size, shuffle=True
                 )
 
-                query_loader_inner = self.data_manager.get_meta_dataloader(
-                    query_dataset_inner, batch_size=meta_batch_size, shuffle=False
+                query_loader = self.data_manager.get_meta_dataloader(
+                    query_dataset, batch_size=meta_batch_size, shuffle=False
                 )
 
-                # Inner gradient steps
+                # ==========================================
+                # Inner Loop: Adapt on Support Classes
+                # ==========================================
+                initial_prompt = current_prompt.data.clone()
+
                 for inner_step in range(inner_steps):
-                    inner_loss = self._meta_inner_step(
-                        support_loader, query_loader_inner,
-                        k_support, k_query
+                    inner_loss = self._prompt_inner_step(
+                        current_prompt, support_loader, query_loader
                     )
 
                     # Manual gradient descent (simple SGD)
                     with torch.no_grad():
-                        for name, param in self.model.router_network.named_parameters():
-                            if param.grad is not None:
-                                param.data -= inner_lr * param.grad
-                                param.grad.zero_()
+                        if current_prompt.grad is not None:
+                            current_prompt.data -= inner_lr * current_prompt.grad
+                            current_prompt.grad.zero_()
 
-                    print(f"    Step {inner_step + 1}/{inner_steps}, Loss: {inner_loss:.4f}")
+                    if inner_step == 0 or (inner_step + 1) % inner_steps == 0:
+                        print(f"  Inner Step {inner_step + 1}/{inner_steps}, Loss: {inner_loss:.4f}")
 
-            # ==========================================
-            # Outer Loop: Meta-update on Query Domain
-            # ==========================================
-            print(f"\n  Outer Loop: {query_domain}")
+                # ==========================================
+                # Outer Loop: Meta-update on Query Classes
+                # ==========================================
+                meta_loss = self._prompt_outer_step(
+                    current_prompt, support_loader, query_loader
+                )
 
-            # Get query domain data
-            query_support_dataset, query_query_dataset = \
-                self.data_manager.get_k_shot_split(query_task, k_support, k_query)
+                # Reset to initial prompt
+                with torch.no_grad():
+                    current_prompt.data.copy_(initial_prompt)
 
-            query_support_loader = self.data_manager.get_meta_dataloader(
-                query_support_dataset, batch_size=meta_batch_size, shuffle=False
-            )
+                # Meta-update using optimizer
+                prompt_optimizer.zero_grad()
+                meta_loss.backward()
+                prompt_optimizer.step()
 
-            query_query_loader = self.data_manager.get_meta_dataloader(
-                query_query_dataset, batch_size=meta_batch_size, shuffle=False
-            )
+                if episode == 0 or (episode + 1) % 10 == 0 or episode == num_episodes - 1:
+                    print(f"  Meta Loss: {meta_loss.item():.4f}")
 
-            # Compute meta-objective on query domain
-            meta_loss = self._meta_outer_step(
-                query_support_loader, query_query_loader,
-                k_support, k_query
-            )
+            # Save prompt to pool
+            self.model.prompt_pool[task_id] = current_prompt.detach().clone()
+            print(f"\n[Task {task_id}] Training completed, prompt saved to pool")
 
-            # Reset to initial parameters before meta-update
-            with torch.no_grad():
-                for name, param in self.model.router_network.named_parameters():
-                    param.data = initial_params[name]
-
-            # Meta-update using optimizer
-            router_optimizer.zero_grad()
-            meta_loss.backward()
-            router_optimizer.step()
-
-            print(f"  Meta Loss: {meta_loss.item():.4f}")
-
-            # Periodic logging
-            if (episode + 1) % 10 == 0:
-                print(f"\n{'=' * 60}")
-                print(f"Episode {episode + 1}/{num_episodes} completed")
-                print(f"{'=' * 60}\n")
+            # Save base prompt for incremental tasks
+            if task_id == 0:
+                base_prompt = current_prompt.detach().clone()
+                print(f"[Task {task_id}] Base prompt saved for incremental tasks")
 
         print("\n" + "=" * 60)
         print("Meta-Learning Completed!")
-        print("Router network trained successfully")
+        print(f"Trained prompts for {len(self.model.prompt_pool)} tasks")
         print("=" * 60 + "\n")
 
-        # Save router checkpoint
-        # Create prefix the same way as in run()
+        # Save prompt checkpoint
         data_name = os.path.splitext(os.path.basename(self.cfg.DATA_CFG_PATH))[0]
         train_name = os.path.splitext(os.path.basename(self.cfg.TRAIN_CFG_PATH))[0]
         prefix = f"{data_name}_{train_name}"
         output_dir = os.path.join("outputs", prefix)
-        latest_path = self.save_router_checkpoint(output_dir)
+        latest_path = self.save_prompt_checkpoint(output_dir)
 
-        # Enable router for evaluation
-        self.model.enable_router()
+        # Enable prompts for evaluation
+        self.model.enable_prompts()
         self.model.meta_training = False
 
         return latest_path
 
-    def _meta_inner_step(self, support_loader, query_loader, k_support, k_query):
+    def _prompt_inner_step(self, prompt, support_loader, query_loader):
         """
-        Inner loop: Compute loss on support set to adapt router.
+        Inner loop: Adapt prompt on support classes, evaluate on query classes.
+
+        Meta-objective: Maximize image-text embedding similarity.
 
         Args:
-            support_loader: DataLoader for support set (k_support shots)
-            query_loader: DataLoader for query set within inner loop (k_query shots)
-            k_support: Number of support shots
-            k_query: Number of query shots
+            prompt: Current learnable prompt (requires_grad=True)
+            support_loader: DataLoader for support classes
+            query_loader: DataLoader for query classes
 
         Returns:
             loss: Scalar loss value
         """
-        self.model.router_network.train()
+        self.model.set_prompt(prompt)
 
-        total_loss = 0.0
-        num_batches = 0
+        # Collect text embeddings for all classes in support set
+        text_embeddings_dict = {}
+        support_labels_set = set()
 
-        # Build prototypes using support set
-        support_features = []
-        support_labels = []
-
+        # Build text embeddings for support classes
         for batch in support_loader:
             images, labels = self.parse_batch(batch)
-
-            # Predict router params
-            router_params = self.model.predict_router_params(images)
-
-            # Extract features with router params
-            img_feat = self.model.extract_img_feature(images)
-            img_feat = F.normalize(img_feat, dim=-1)
-
-            # Extract edge features with router params
-            edge_feat = self.model._extract_edge_features(images, labels, router_params)
-            edge_feat = F.normalize(edge_feat, dim=-1)
-
-            # Fuse features using router's gamma
-            gamma = router_params['gamma']
-            fused_feat = (1 - gamma) * img_feat + gamma * edge_feat
-            fused_feat = F.normalize(fused_feat, dim=-1)
-
-            support_features.append(fused_feat)
-            support_labels.append(labels)
-
-        support_features = torch.cat(support_features, dim=0)
-        support_labels = torch.cat(support_labels, dim=0)
-
-        # Compute prototypes
-        unique_labels = torch.unique(support_labels)
-        prototypes = []
-        for c in unique_labels:
-            idx = (support_labels == c)
-            proto = support_features[idx].mean(dim=0)
-            prototypes.append(proto)
-        prototypes = torch.stack(prototypes, dim=0)  # (N_classes, D)
-        prototypes = F.normalize(prototypes, dim=-1)
+            for label in labels:
+                label_idx = label.item()
+                if label_idx not in text_embeddings_dict:
+                    class_name = self.data_manager.class_names[label_idx]
+                    # Get text embedding for this class
+                    text_emb = self._get_text_embedding(class_name)
+                    text_embeddings_dict[label_idx] = text_emb
+                    support_labels_set.add(label_idx)
 
         # Compute loss on query set
-        total_loss_tensor = 0.0  # Accumulate as tensor
-        num_batches = 0
+        total_loss_tensor = 0.0
+        num_samples = 0
 
         for batch in query_loader:
             images, labels = self.parse_batch(batch)
 
-            # Predict router params
-            router_params = self.model.predict_router_params(images)
-
-            # Extract and fuse features
+            # Extract image features with prompt
             img_feat = self.model.extract_img_feature(images)
             img_feat = F.normalize(img_feat, dim=-1)
 
-            edge_feat = self.model._extract_edge_features(images, labels, router_params)
-            edge_feat = F.normalize(edge_feat, dim=-1)
+            # Get corresponding text embeddings
+            batch_text_embs = []
+            for label in labels:
+                label_idx = label.item()
+                if label_idx in text_embeddings_dict:
+                    batch_text_embs.append(text_embeddings_dict[label_idx])
+                else:
+                    # Handle unseen labels (should not happen in query set)
+                    class_name = self.data_manager.class_names[label_idx]
+                    text_emb = self._get_text_embedding(class_name)
+                    batch_text_embs.append(text_emb)
 
-            gamma = router_params['gamma']
-            fused_feat = (1 - gamma) * img_feat + gamma * edge_feat
-            fused_feat = F.normalize(fused_feat, dim=-1)
+            batch_text_embs = torch.stack(batch_text_embs, dim=0)
+            batch_text_embs = F.normalize(batch_text_embs, dim=-1)
 
-            # Compute similarity to prototypes
-            logits = fused_feat @ prototypes.t()  # (B, N_classes)
+            # Compute cosine similarity loss (negative similarity to minimize)
+            similarity = (img_feat * batch_text_embs).sum(dim=1)  # (B,)
+            loss = -similarity.mean()  # Maximize similarity = minimize negative similarity
 
-            # Map labels to prototype indices
-            label_to_idx = {c.item(): idx for idx, c in enumerate(unique_labels)}
-            targets_idx = torch.tensor(
-                [label_to_idx[l.item()] for l in labels],
-                device=labels.device
-            )
+            total_loss_tensor += loss * images.size(0)
+            num_samples += images.size(0)
 
-            # Cross-entropy loss
-            loss = F.cross_entropy(logits, targets_idx)
-
-            # Accumulate loss as tensor (not .item())
-            total_loss_tensor += loss
-            num_batches += 1
-
-        # Compute average loss
-        avg_loss_tensor = total_loss_tensor / max(num_batches, 1)
-
-        # Single backward call
+        avg_loss_tensor = total_loss_tensor / max(num_samples, 1)
         avg_loss_tensor.backward()
 
-        # Return scalar for logging
         return avg_loss_tensor.item()
 
-    def _meta_outer_step(self, support_loader, query_loader, k_support, k_query):
+    def _prompt_outer_step(self, prompt, support_loader, query_loader):
         """
-        Outer loop: Compute meta-objective on query domain.
-
-        Similar to inner step, but returns loss tensor for meta-update.
+        Outer loop: Compute meta-objective on query classes.
 
         Returns:
             meta_loss: Tensor (requires_grad=True)
         """
-        self.model.router_network.train()
+        self.model.set_prompt(prompt)
 
-        # Build prototypes using support set
-        support_features = []
-        support_labels = []
+        # Build text embeddings for support classes
+        text_embeddings_dict = {}
 
         for batch in support_loader:
             images, labels = self.parse_batch(batch)
-
-            router_params = self.model.predict_router_params(images)
-
-            img_feat = self.model.extract_img_feature(images)
-            img_feat = F.normalize(img_feat, dim=-1)
-
-            edge_feat = self.model._extract_edge_features(images, labels, router_params)
-            edge_feat = F.normalize(edge_feat, dim=-1)
-
-            gamma = router_params['gamma']
-            fused_feat = (1 - gamma) * img_feat + gamma * edge_feat
-            fused_feat = F.normalize(fused_feat, dim=-1)
-
-            support_features.append(fused_feat)
-            support_labels.append(labels)
-
-        support_features = torch.cat(support_features, dim=0)
-        support_labels = torch.cat(support_labels, dim=0)
-
-        # Compute prototypes
-        unique_labels = torch.unique(support_labels)
-        prototypes = []
-        for c in unique_labels:
-            idx = (support_labels == c)
-            proto = support_features[idx].mean(dim=0)
-            prototypes.append(proto)
-        prototypes = torch.stack(prototypes, dim=0)
-        prototypes = F.normalize(prototypes, dim=-1)
+            for label in labels:
+                label_idx = label.item()
+                if label_idx not in text_embeddings_dict:
+                    class_name = self.data_manager.class_names[label_idx]
+                    text_emb = self._get_text_embedding(class_name)
+                    text_embeddings_dict[label_idx] = text_emb
 
         # Compute loss on query set
         total_loss = 0.0
-        num_batches = 0
+        num_samples = 0
 
         for batch in query_loader:
             images, labels = self.parse_batch(batch)
 
-            router_params = self.model.predict_router_params(images)
-
             img_feat = self.model.extract_img_feature(images)
             img_feat = F.normalize(img_feat, dim=-1)
 
-            edge_feat = self.model._extract_edge_features(images, labels, router_params)
-            edge_feat = F.normalize(edge_feat, dim=-1)
+            batch_text_embs = []
+            for label in labels:
+                label_idx = label.item()
+                if label_idx in text_embeddings_dict:
+                    batch_text_embs.append(text_embeddings_dict[label_idx])
+                else:
+                    class_name = self.data_manager.class_names[label_idx]
+                    text_emb = self._get_text_embedding(class_name)
+                    batch_text_embs.append(text_emb)
 
-            gamma = router_params['gamma']
-            fused_feat = (1 - gamma) * img_feat + gamma * edge_feat
-            fused_feat = F.normalize(fused_feat, dim=-1)
+            batch_text_embs = torch.stack(batch_text_embs, dim=0)
+            batch_text_embs = F.normalize(batch_text_embs, dim=-1)
 
-            logits = fused_feat @ prototypes.t()
+            similarity = (img_feat * batch_text_embs).sum(dim=1)
+            loss = -similarity.mean()
 
-            label_to_idx = {c.item(): idx for idx, c in enumerate(unique_labels)}
-            targets_idx = torch.tensor(
-                [label_to_idx[l.item()] for l in labels],
-                device=labels.device
-            )
+            total_loss += loss * images.size(0)
+            num_samples += images.size(0)
 
-            loss = F.cross_entropy(logits, targets_idx)
-
-            total_loss += loss
-            num_batches += 1
-
-        meta_loss = total_loss / max(num_batches, 1)
+        meta_loss = total_loss / max(num_samples, 1)
         return meta_loss
 
+    @torch.no_grad()
+    def _get_text_embedding(self, class_name):
+        """
+        Get text embedding for a class name using CLIP.
+
+        Args:
+            class_name: Class name string
+
+        Returns:
+            text_emb: Text embedding (D,)
+        """
+        import models.clip.clip as clip
+
+        # Format class name
+        class_name = class_name.replace('_', ' ').replace('-', ' ')
+
+        # Use single template
+        text = f"a photo of a {class_name}"
+        text_token = clip.tokenize([text]).to(self.device)
+
+        # Encode text
+        text_emb = self.model.clip_model.encode_text(text_token)
+        text_emb = F.normalize(text_emb, dim=-1)
+        text_emb = text_emb.squeeze(0)  # (D,)
+
+        return text_emb
+
     # ======================================================
-    # Router Checkpoint Management
+    # Prompt Checkpoint Management
     # ======================================================
 
-    def save_router_checkpoint(self, output_dir):
+    def save_prompt_checkpoint(self, output_dir):
         """
-        Save router network checkpoint.
+        Save prompt pool checkpoint.
 
         Args:
             output_dir: Base output directory (e.g., outputs/prefix)
         """
-        if self.model.router_network is None:
-            print("[Warning] No router network to save")
+        if self.model.prompt_pool is None or len(self.model.prompt_pool) == 0:
+            print("[Warning] No prompts to save")
             return
 
         import os
-        # Create router_checkpoints subdirectory
+        # Create checkpoint directory
         checkpoint_dir = output_dir
         os.makedirs(checkpoint_dir, exist_ok=True)
 
         # Create checkpoint filename with timestamp
         import time
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        # Save router state dict
+
+        # Convert prompt pool to state dict
+        prompt_state_dict = {}
+        for task_id, prompt in self.model.prompt_pool.items():
+            prompt_state_dict[f'task_{task_id}'] = prompt.cpu()
+
         checkpoint = {
-            'router_state_dict': self.model.router_network.state_dict(),
+            'prompt_pool': prompt_state_dict,
             'timestamp': timestamp,
             'config': {
-                'input_dim': 512,
-                'hidden_dim': self.cfg.TRAINER.BiMC.META.ROUTER_HIDDEN_DIM,
+                'prompt_length': self.cfg.TRAINER.BiMC.META.PROMPT_LENGTH,
+                'prompt_dim': self.cfg.TRAINER.BiMC.META.PROMPT_DIM,
+                'num_tasks': len(prompt_state_dict),
             }
         }
 
-        # Also save as 'latest'
-        latest_path = os.path.join(checkpoint_dir, "router_latest.pth")
+        # Save as 'latest'
+        latest_path = os.path.join(checkpoint_dir, "prompts_latest.pth")
         torch.save(checkpoint, latest_path)
-        print(f"[Checkpoint] Latest router saved to: {latest_path}\n")
+        print(f"[Checkpoint] Prompts saved to: {latest_path}")
+        print(f"[Checkpoint] Saved {len(prompt_state_dict)} task prompts\n")
         return latest_path
 
-    def load_router_checkpoint(self, checkpoint_path):
+    def load_prompt_checkpoint(self, checkpoint_path):
         """
-        Load router network from checkpoint.
+        Load prompt pool from checkpoint.
 
         Args:
             checkpoint_path: Path to checkpoint file
         """
-        if self.model.router_network is None:
-            print("[Error] Router network not initialized!")
+        if self.model.prompt_pool is None:
+            print("[Error] Prompt pool not initialized!")
             return
 
         import os
@@ -753,12 +713,18 @@ class Runner:
         # Load checkpoint
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
-        # Load state dict
-        self.model.router_network.load_state_dict(checkpoint['router_state_dict'])
+        # Load prompt pool
+        prompt_state_dict = checkpoint['prompt_pool']
+        self.model.prompt_pool = {}
 
-        print(f"[Checkpoint] Router loaded from: {checkpoint_path}")
+        for key, prompt_tensor in prompt_state_dict.items():
+            task_id = int(key.split('_')[1])  # Extract task_id from 'task_0', 'task_1', etc.
+            self.model.prompt_pool[task_id] = prompt_tensor.to(self.device)
+
+        print(f"[Checkpoint] Prompts loaded from: {checkpoint_path}")
         if 'timestamp' in checkpoint:
             print(f"[Checkpoint] Saved at: {checkpoint['timestamp']}")
+        print(f"[Checkpoint] Loaded {len(self.model.prompt_pool)} task prompts")
 
-        # Enable router
-        self.model.enable_router()
+        # Enable prompts
+        self.model.enable_prompts()
