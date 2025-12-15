@@ -6,10 +6,10 @@ DEVICE:
 
 DATALOADER:
   TRAIN:
-    BATCH_SIZE_BASE: 16  # Normal batch size for evaluation
-    BATCH_SIZE_INC: 16   # Normal batch size for evaluation
+    BATCH_SIZE_BASE: 64  # Normal batch size for evaluation
+    BATCH_SIZE_INC: 64   # Normal batch size for evaluation
   TEST:
-    BATCH_SIZE: 16      # Normal batch size for evaluation
+    BATCH_SIZE: 64      # Normal batch size for evaluation
   NUM_WORKERS: 4
 
 
@@ -35,8 +35,8 @@ TRAINER:
 
     # EDGE specific parameters (fixed hyperparameters, no router)
     EDGE:
-      SIGMA: 1.0          # Fixed Gaussian blur sigma
-      GAMMA: 0.5          # Fixed edge fusion weight
+      SIGMA: 2.5          # Fixed Gaussian blur sigma
+      GAMMA: 0.4          # Fixed edge fusion weight
       KERNEL_TYPE: "laplacian"  # Fixed kernel type
       INFERENCE_EDGE: False  # Extract edge features during inference
 

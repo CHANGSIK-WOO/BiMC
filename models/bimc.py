@@ -547,15 +547,16 @@ class BiMC(nn.Module):
             prompt: Tensor (prompt_length, prompt_dim) or (B, prompt_length, prompt_dim)
         """
         # Set prompt in the CLIP visual encoder
+        # Use object.__setattr__ to avoid PyTorch trying to register it as a parameter
         if hasattr(self.clip_model, 'visual'):
-            self.clip_model.visual.current_prompt = prompt
+            object.__setattr__(self.clip_model.visual, 'current_prompt', prompt)
         else:
             print("[Warning] CLIP model does not have visual encoder with prompt support")
 
     def clear_prompt(self):
         """Clear the current prompt from visual encoder."""
         if hasattr(self.clip_model, 'visual'):
-            self.clip_model.visual.current_prompt = None
+            object.__setattr__(self.clip_model.visual, 'current_prompt', None)
 
     def freeze_all_except_prompt(self, prompt):
         """

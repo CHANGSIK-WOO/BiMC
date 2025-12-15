@@ -33,9 +33,11 @@ TRAINER:
     GAMMA_BASE: 1.0
     GAMMA_INC: 5.0
 
-    # EDGE specific parameters
+    # EDGE specific parameters (fixed hyperparameters, no router)
     EDGE:
-      GAMMA: 0.5  # Edge feature fusion weight
+      SIGMA: 2.5          # Fixed Gaussian blur sigma
+      GAMMA: 0.4          # Fixed edge fusion weight
+      KERNEL_TYPE: "laplacian"  # Fixed kernel type
       INFERENCE_EDGE: False  # Extract edge features during inference
 
     # EDGE always uses ensemble (same condition as bimc_ensemble baseline)
