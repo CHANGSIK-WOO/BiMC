@@ -364,8 +364,9 @@ class Runner:
         # Get meta-learning config
         meta_cfg = self.cfg.TRAINER.BiMC.META
         num_episodes = meta_cfg.NUM_EPISODES
+        base_finetune_enabled = meta_cfg.BASE_FINETUNE_ENABLED
         base_finetune_epochs = meta_cfg.BASE_FINETUNE_EPOCHS
-        inc_epochs = meta_cfg.INC_EPOCHS
+        inc_finetune_epochs = meta_cfg.INC_FINETUNE_EPOCHS
         inner_lr = meta_cfg.INNER_LR
         outer_lr = meta_cfg.OUTER_LR
         inner_steps = meta_cfg.INNER_STEPS
@@ -375,8 +376,10 @@ class Runner:
         k_shot = meta_cfg.SUPPORT_SHOT
 
         print(f"Base meta-learning episodes: {num_episodes}")
-        print(f"Base fine-tuning epochs: {base_finetune_epochs}")
-        print(f"Incremental fine-tuning epochs: {inc_epochs}")
+        print(f"Base fine-tuning: {'Enabled' if base_finetune_enabled else 'Disabled'}")
+        if base_finetune_enabled:
+            print(f"Base fine-tuning epochs: {base_finetune_epochs}")
+        print(f"Incremental fine-tuning epochs: {inc_finetune_epochs}")
         print(f"Inner LR: {inner_lr}, Outer LR: {outer_lr}")
         print(f"Inner Steps: {inner_steps}")
         print(f"Base split per episode: {base_support_classes} support / {base_query_classes} query ({k_shot}-shot)")
@@ -481,26 +484,29 @@ class Runner:
             self.model.freeze_all_except_prompt(task_prompt)
 
             # ==========================================
-            # Task 0: Fine-tune with FULL-SHOT data
+            # Task 0: Fine-tune with FULL-SHOT data (if enabled)
             # ==========================================
             if task_id == 0:
-                print(f"[Task {task_id}] Fine-tuning with full-shot data")
+                if base_finetune_enabled:
+                    print(f"[Task {task_id}] Fine-tuning with full-shot data")
 
-                base_batch_size = meta_cfg.BASE_BATCH_SIZE
-                base_dataset = self.data_manager.get_dataset(
-                    task_id, source='train', mode='train', accumulated_past=False, k_shot=None  # Full-shot!
-                )
-                train_loader = self.data_manager.get_meta_dataloader(
-                    base_dataset, batch_size=base_batch_size, shuffle=True
-                )
-
-                print(f"[Task {task_id}] Batch size: {base_batch_size}, Epochs: {base_finetune_epochs}")
-
-                for epoch in range(base_finetune_epochs):
-                    epoch_loss = self._train_prompt_standard(
-                        task_prompt, train_loader, task_optimizer
+                    base_batch_size = meta_cfg.BASE_BATCH_SIZE
+                    base_dataset = self.data_manager.get_dataset(
+                        task_id, source='train', mode='train', accumulated_past=False, k_shot=None  # Full-shot!
                     )
-                    print(f"  Epoch {epoch + 1}/{base_finetune_epochs}, Loss: {epoch_loss:.4f}")
+                    train_loader = self.data_manager.get_meta_dataloader(
+                        base_dataset, batch_size=base_batch_size, shuffle=True
+                    )
+
+                    print(f"[Task {task_id}] Batch size: {base_batch_size}, Epochs: {base_finetune_epochs}")
+
+                    for epoch in range(base_finetune_epochs):
+                        epoch_loss = self._train_prompt_standard(
+                            task_prompt, train_loader, task_optimizer
+                        )
+                        print(f"  Epoch {epoch + 1}/{base_finetune_epochs}, Loss: {epoch_loss:.4f}")
+                else:
+                    print(f"[Task {task_id}] Skipping fine-tuning (BASE_FINETUNE_ENABLED=False)")
 
             # ==========================================
             # Tasks 1,2,3: Fine-tune with 5-SHOT data
@@ -516,13 +522,13 @@ class Runner:
                     inc_dataset, batch_size=inc_batch_size, shuffle=True
                 )
 
-                print(f"[Task {task_id}] Batch size: {inc_batch_size}, Epochs: {inc_epochs}")
+                print(f"[Task {task_id}] Batch size: {inc_batch_size}, Epochs: {inc_finetune_epochs}")
 
-                for epoch in range(inc_epochs):
+                for epoch in range(inc_finetune_epochs):
                     epoch_loss = self._train_prompt_standard(
                         task_prompt, train_loader, task_optimizer
                     )
-                    print(f"  Epoch {epoch + 1}/{inc_epochs}, Loss: {epoch_loss:.4f}")
+                    print(f"  Epoch {epoch + 1}/{inc_finetune_epochs}, Loss: {epoch_loss:.4f}")
 
             # Save task-specific prompt to pool
             self.model.prompt_pool[task_id] = task_prompt.detach().clone()

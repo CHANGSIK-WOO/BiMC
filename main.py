@@ -83,21 +83,30 @@ def extend_cfg(cfg):
     # Meta-learning config
     cfg.TRAINER.BiMC.META = CN()
     cfg.TRAINER.BiMC.META.ENABLED = False
+
+    # Prompt parameters
+    cfg.TRAINER.BiMC.META.PROMPT_LENGTH = 4
+    cfg.TRAINER.BiMC.META.PROMPT_DIM = 768  # ViT-B/16 hidden dimension
+
+    # Meta-learning training parameters
     cfg.TRAINER.BiMC.META.NUM_EPISODES = 100
-    cfg.TRAINER.BiMC.META.BASE_EPOCHS = 5
     cfg.TRAINER.BiMC.META.INNER_LR = 0.01
     cfg.TRAINER.BiMC.META.OUTER_LR = 0.001
     cfg.TRAINER.BiMC.META.INNER_STEPS = 3
-    cfg.TRAINER.BiMC.META.BASE_SUPPORT_CLASSES = 28  # Support classes for base meta-learning
-    cfg.TRAINER.BiMC.META.BASE_QUERY_CLASSES = 7     # Query classes for base meta-learning
+    cfg.TRAINER.BiMC.META.BASE_SUPPORT_CLASSES = 28
+    cfg.TRAINER.BiMC.META.BASE_QUERY_CLASSES = 7
     cfg.TRAINER.BiMC.META.SUPPORT_SHOT = 5
-    cfg.TRAINER.BiMC.META.PROMPT_LENGTH = 4
-    cfg.TRAINER.BiMC.META.PROMPT_DIM = 768  # ViT-B/16 hidden dimension
-    cfg.TRAINER.BiMC.META.BATCH_SIZE = 16  # Batch size for meta-learning (base task)
-    cfg.TRAINER.BiMC.META.BASE_BATCH_SIZE = 64  # Batch size for base task fine-tuning (full-shot)
-    cfg.TRAINER.BiMC.META.INC_BATCH_SIZE = 64  # Batch size for incremental tasks standard training
-    cfg.TRAINER.BiMC.META.BASE_FINETUNE_EPOCHS = 5  # Fine-tuning epochs for base task
-    cfg.TRAINER.BiMC.META.INC_EPOCHS = 10  # Epochs for incremental tasks standard training
+    cfg.TRAINER.BiMC.META.BATCH_SIZE = 16
+
+    # Fine-tuning parameters
+    cfg.TRAINER.BiMC.META.BASE_FINETUNE_ENABLED = True
+    cfg.TRAINER.BiMC.META.BASE_FINETUNE_EPOCHS = 5
+    cfg.TRAINER.BiMC.META.BASE_BATCH_SIZE = 64
+    cfg.TRAINER.BiMC.META.INC_FINETUNE_EPOCHS = 10
+    cfg.TRAINER.BiMC.META.INC_BATCH_SIZE = 64
+
+    # Deprecated (kept for backward compatibility)
+    cfg.TRAINER.BiMC.META.BASE_EPOCHS = 5
 
 
 
