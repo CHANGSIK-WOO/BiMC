@@ -364,17 +364,20 @@ class Runner:
         # Get meta-learning config
         meta_cfg = self.cfg.TRAINER.BiMC.META
         num_episodes = meta_cfg.NUM_EPISODES
+        base_epochs = meta_cfg.BASE_EPOCHS
         inner_lr = meta_cfg.INNER_LR
         outer_lr = meta_cfg.OUTER_LR
         inner_steps = meta_cfg.INNER_STEPS
 
         inc_support_classes = meta_cfg.INC_SUPPORT_CLASSES
         inc_query_classes = meta_cfg.INC_QUERY_CLASSES
+        k_shot = meta_cfg.SUPPORT_SHOT
 
-        print(f"Episodes: {num_episodes}")
+        print(f"Base epochs: {base_epochs}")
+        print(f"Incremental episodes: {num_episodes}")
         print(f"Inner LR: {inner_lr}, Outer LR: {outer_lr}")
         print(f"Inner Steps: {inner_steps}")
-        print(f"Incremental split: {inc_support_classes} support / {inc_query_classes} query")
+        print(f"Incremental split: {inc_support_classes} support / {inc_query_classes} query ({k_shot}-shot)")
         print("=" * 60 + "\n")
 
         # ==========================================
@@ -421,16 +424,14 @@ class Runner:
 
                 print(f"[Task {task_id}] Base batch size: {base_batch_size}")
 
-                # Standard training epochs
-                base_epochs = num_episodes  # Reuse num_episodes as epoch count for base
+                # Standard training epochs (use BASE_EPOCHS from config)
+                for epoch in range(base_epochs):
+                    epoch_loss = self._train_prompt_standard(
+                        current_prompt, train_loader, prompt_optimizer
+                    )
 
-                # for epoch in range(base_epochs):
-                #     epoch_loss = self._train_prompt_standard(
-                #         current_prompt, train_loader, prompt_optimizer
-                #     )
-                #
-                #     if epoch == 0 or (epoch + 1) % 10 == 0 or epoch == base_epochs - 1:
-                #         print(f"  Epoch {epoch + 1}/{base_epochs}, Loss: {epoch_loss:.4f}")
+                    if epoch == 0 or (epoch + 1) % 10 == 0 or epoch == base_epochs - 1:
+                        print(f"  Epoch {epoch + 1}/{base_epochs}, Loss: {epoch_loss:.4f}")
 
                 # Save base prompt
                 self.model.prompt_pool[task_id] = current_prompt.detach().clone()
@@ -449,9 +450,9 @@ class Runner:
             for episode in range(num_episodes):
                 print(f"\n[Task {task_id}, Episode {episode + 1}/{num_episodes}]")
 
-                # Get class split for this task
+                # Get class split for this task (with k-shot sampling)
                 support_dataset, query_dataset = \
-                    self.data_manager.get_class_split(task_id, num_support, num_query)
+                    self.data_manager.get_class_split(task_id, num_support, num_query, k_shot=k_shot)
 
                 meta_batch_size = meta_cfg.BATCH_SIZE
 

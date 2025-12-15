@@ -324,21 +324,22 @@ class DGFSCILDataManager:
 
         return support_domains, query_domain, support_tasks, query_task
 
-    def get_class_split(self, task_id, num_support_classes, num_query_classes):
+    def get_class_split(self, task_id, num_support_classes, num_query_classes, k_shot=None):
         """
         Split classes into support and query sets for prompt meta-learning.
 
-        For base session (task 0): 200 support classes / 40 query classes
-        For incremental sessions (task 1,2,3): 30 support classes / 5 query classes
+        For base session (task 0): All samples from support/query classes (full-shot)
+        For incremental sessions (task 1,2,3): k-shot per class (default: 5-shot)
 
         Args:
             task_id: Session ID
             num_support_classes: Number of classes for support set
             num_query_classes: Number of classes for query set
+            k_shot: Number of samples per class (None = use all samples, for base task)
 
         Returns:
-            support_dataset: Support set dataset (with all samples from support classes)
-            query_dataset: Query set dataset (with all samples from query classes)
+            support_dataset: Support set dataset
+            query_dataset: Query set dataset
         """
         # Get domain for this session
         domain = self._get_domain_for_session(task_id)
@@ -363,19 +364,29 @@ class DGFSCILDataManager:
         support_classes = shuffled_classes[:num_support_classes]
         query_classes = shuffled_classes[num_support_classes:num_support_classes + num_query_classes]
 
-        # Collect all samples from support classes
+        # Collect samples from support classes
         support_x, support_y = [], []
         for c in support_classes:
             idx_c = np.where(y == c)[0]
             if len(idx_c) > 0:
+                # For incremental tasks: sample k_shot per class
+                # For base task: use all samples (k_shot=None)
+                if k_shot is not None and len(idx_c) > k_shot:
+                    # Randomly sample k_shot samples
+                    idx_c = np.random.choice(idx_c, k_shot, replace=False)
                 support_x.append(x[idx_c])
                 support_y.append(y[idx_c])
 
-        # Collect all samples from query classes
+        # Collect samples from query classes
         query_x, query_y = [], []
         for c in query_classes:
             idx_c = np.where(y == c)[0]
             if len(idx_c) > 0:
+                # For incremental tasks: sample k_shot per class
+                # For base task: use all samples (k_shot=None)
+                if k_shot is not None and len(idx_c) > k_shot:
+                    # Randomly sample k_shot samples
+                    idx_c = np.random.choice(idx_c, k_shot, replace=False)
                 query_x.append(x[idx_c])
                 query_y.append(y[idx_c])
 

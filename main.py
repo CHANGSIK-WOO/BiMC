@@ -84,11 +84,13 @@ def extend_cfg(cfg):
     cfg.TRAINER.BiMC.META = CN()
     cfg.TRAINER.BiMC.META.ENABLED = False
     cfg.TRAINER.BiMC.META.NUM_EPISODES = 100
+    cfg.TRAINER.BiMC.META.BASE_EPOCHS = 5
     cfg.TRAINER.BiMC.META.INNER_LR = 0.01
     cfg.TRAINER.BiMC.META.OUTER_LR = 0.001
     cfg.TRAINER.BiMC.META.INNER_STEPS = 3
     cfg.TRAINER.BiMC.META.INC_SUPPORT_CLASSES = 30
     cfg.TRAINER.BiMC.META.INC_QUERY_CLASSES = 5
+    cfg.TRAINER.BiMC.META.SUPPORT_SHOT = 5
     cfg.TRAINER.BiMC.META.PROMPT_LENGTH = 4
     cfg.TRAINER.BiMC.META.PROMPT_DIM = 768  # ViT-B/16 hidden dimension
     cfg.TRAINER.BiMC.META.BATCH_SIZE = 16  # Batch size for meta-learning (incremental tasks)
