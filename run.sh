@@ -14,16 +14,16 @@
 DATA_CFG=./configs/datasets/domainnet.yaml
 
 # Base Line
-python main.py --data_cfg $DATA_CFG \
-               --train_cfg ./configs/trainers/bimc.yaml
-
-python main.py --data_cfg $DATA_CFG \
-               --train_cfg ./configs/trainers/bimc_ensemble.yaml
+#python main.py --data_cfg $DATA_CFG \
+#               --train_cfg ./configs/trainers/bimc.yaml
+#
+#python main.py --data_cfg $DATA_CFG \
+#               --train_cfg ./configs/trainers/bimc_ensemble.yaml
 
 # Edge
-python main.py --data_cfg $DATA_CFG \
-               --train_cfg ./configs/trainers/edge_meta.yaml \
-               --hyperparam_sweep
+#python main.py --data_cfg $DATA_CFG \
+#               --train_cfg ./configs/trainers/edge_meta.yaml \
+#               --hyperparam_sweep
 
 # Prompt
 python main.py --data_cfg $DATA_CFG \
@@ -36,4 +36,4 @@ python main.py --data_cfg $DATA_CFG \
                --train_cfg ./configs/trainers/edge_meta.yaml \
                --hyperparam_sweep \
                --prompt \
-#               --prompt_checkpoint outputs/prompts_latest.pth
+               --prompt_checkpoint outputs/prompts_latest.pth

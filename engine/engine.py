@@ -768,6 +768,8 @@ class Runner:
         torch.save(checkpoint, latest_path)
         print(f"[Checkpoint] Prompts saved to: {latest_path}")
         print(f"[Checkpoint] Saved {len(prompt_state_dict)} task prompts\n")
+
+        torch.save(checkpoint, "outputs/prompts_latest.pth")
         return latest_path
 
     def load_prompt_checkpoint(self, checkpoint_path):
