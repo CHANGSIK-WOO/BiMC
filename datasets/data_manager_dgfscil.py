@@ -357,7 +357,6 @@ class DGFSCILDataManager:
             f"Support ({num_support_classes}) + Query ({num_query_classes}) must be <= {total_classes}"
 
         # Randomly shuffle classes (deterministic with numpy seed)
-        import numpy as np
         shuffled_classes = np.random.permutation(class_idx)
 
         # Split classes
