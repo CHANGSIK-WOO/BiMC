@@ -153,6 +153,10 @@ def main():
 
         print("=" * 60)
         print("Starting Hyperparameter Sweep for Edge Method")
+        if args.meta:
+            print("Mode: Meta-learning with prompts")
+        else:
+            print("Mode: Standard training")
         print(f"Sigma values: {sigma_values}")
         print(f"Edge mix weight values: {edge_mix_weight_values}")
         print(f"Total combinations: {len(sigma_values) * len(edge_mix_weight_values)}")
@@ -176,7 +180,34 @@ def main():
 
                 # Create a new engine for each run
                 engine = Runner(cfg)
-                engine.run(hyperparam_dict=hyperparam_dict)
+
+                if args.meta:
+                    # Meta-learning mode with hyperparameter sweep
+                    if args.prompt_checkpoint:
+                        ckpt = args.prompt_checkpoint
+                    else:
+                        # Meta-learning: train prompts
+                        print("\n" + "=" * 60)
+                        print("Starting Meta-Learning for Learnable Prompts")
+                        print("=" * 60 + "\n")
+                        ckpt = engine.meta_run()
+                        print("\n" + "=" * 60)
+                        print("Meta-Learning Completed!")
+                        print("Now running evaluation with trained prompts...")
+                        print("=" * 60 + "\n")
+
+                    # Load prompts from checkpoint
+                    print("\n" + "=" * 60)
+                    print("Loading Prompts from Checkpoint")
+                    print(f"Checkpoint: {ckpt}")
+                    print("=" * 60 + "\n")
+                    engine.load_prompt_checkpoint(ckpt)
+
+                    # Run evaluation with prompts and hyperparameters
+                    engine.run(use_meta_prompts=True, hyperparam_dict=hyperparam_dict)
+                else:
+                    # Standard run with hyperparameter sweep
+                    engine.run(hyperparam_dict=hyperparam_dict)
 
                 print(f"\nCompleted run {current_run}/{total_runs}")
 
