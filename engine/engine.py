@@ -364,6 +364,7 @@ class Runner:
         # Get meta-learning config
         meta_cfg = self.cfg.TRAINER.BiMC.META
         num_episodes = meta_cfg.NUM_EPISODES
+        base_finetune_epochs = meta_cfg.BASE_FINETUNE_EPOCHS
         inc_epochs = meta_cfg.INC_EPOCHS
         inner_lr = meta_cfg.INNER_LR
         outer_lr = meta_cfg.OUTER_LR
@@ -374,138 +375,158 @@ class Runner:
         k_shot = meta_cfg.SUPPORT_SHOT
 
         print(f"Base meta-learning episodes: {num_episodes}")
-        print(f"Incremental standard epochs: {inc_epochs}")
+        print(f"Base fine-tuning epochs: {base_finetune_epochs}")
+        print(f"Incremental fine-tuning epochs: {inc_epochs}")
         print(f"Inner LR: {inner_lr}, Outer LR: {outer_lr}")
         print(f"Inner Steps: {inner_steps}")
         print(f"Base split per episode: {base_support_classes} support / {base_query_classes} query ({k_shot}-shot)")
         print("=" * 60 + "\n")
 
         # ==========================================
-        # Sequential Task Training: Task 1 → Task 2 → Task 3 → Task 4
+        # Step 1: Meta-learning on Base Task (Task 0)
         # ==========================================
 
-        base_prompt = None  # Will be saved after task 1 meta-learning
+        print(f"\n{'=' * 60}")
+        print("Step 1: Meta-Learning on Base Task (Task 0)")
+        print(f"{'=' * 60}")
 
-        # Train each task sequentially
-        for task_id in range(self.data_manager.num_tasks):
-            print(f"\n{'=' * 60}")
-            print(f"Training Task {task_id}")
-            print(f"{'=' * 60}")
+        # Create initial prompt for meta-learning
+        meta_prompt_param = self.model.create_prompt(task_id=0)
+        prompt_optimizer = torch.optim.Adam([meta_prompt_param], lr=outer_lr)
+        self.model.freeze_all_except_prompt(meta_prompt_param)
 
-            # Create a new prompt for this task
-            current_prompt = self.model.create_prompt(task_id=task_id)
+        print(f"[Meta-Learning] Each episode: {base_support_classes} support + {base_query_classes} query classes ({k_shot}-shot)")
 
-            # Initialize from base prompt for incremental tasks
-            if task_id > 0 and base_prompt is not None:
-                with torch.no_grad():
-                    current_prompt.data.copy_(base_prompt.data)
-                print(f"[Task {task_id}] Initialized prompt from base task")
+        meta_batch_size = meta_cfg.BATCH_SIZE
 
-            # Setup optimizer for this prompt only
-            prompt_optimizer = torch.optim.Adam([current_prompt], lr=outer_lr)
+        # Meta-training episodes on base task
+        for episode in range(num_episodes):
+            print(f"\n[Episode {episode + 1}/{num_episodes}]")
 
-            # Freeze CLIP model
-            self.model.freeze_all_except_prompt(current_prompt)
+            # Get random class split from base task (with k-shot sampling)
+            support_dataset, query_dataset = \
+                self.data_manager.get_class_split(0, base_support_classes, base_query_classes, k_shot=k_shot)
 
-            # ==========================================
-            # BASE TASK: Meta-learning (sample 35 classes per episode, 5-shot)
-            # ==========================================
-            if task_id == 0:
-                print(f"[Task {task_id}] Using meta-learning with random class sampling")
-                print(f"[Task {task_id}] Each episode: {base_support_classes} support + {base_query_classes} query classes ({k_shot}-shot)")
-
-                num_support = base_support_classes
-                num_query = base_query_classes
-                meta_batch_size = meta_cfg.BATCH_SIZE
-
-                # Meta-training episodes for base task
-                for episode in range(num_episodes):
-                    print(f"\n[Task {task_id}, Episode {episode + 1}/{num_episodes}]")
-
-                    # Get random class split from base task (with k-shot sampling)
-                    support_dataset, query_dataset = \
-                        self.data_manager.get_class_split(task_id, num_support, num_query, k_shot=k_shot)
-
-                    support_loader = self.data_manager.get_meta_dataloader(
-                        support_dataset, batch_size=meta_batch_size, shuffle=True
-                    )
-
-                    query_loader = self.data_manager.get_meta_dataloader(
-                        query_dataset, batch_size=meta_batch_size, shuffle=False
-                    )
-
-                    # ==========================================
-                    # Inner Loop: Adapt on Support Classes
-                    # ==========================================
-                    initial_prompt = current_prompt.data.clone()
-
-                    for inner_step in range(inner_steps):
-                        inner_loss = self._prompt_inner_step(
-                            current_prompt, support_loader, query_loader
-                        )
-
-                        # Manual gradient descent (simple SGD)
-                        with torch.no_grad():
-                            if current_prompt.grad is not None:
-                                current_prompt.data -= inner_lr * current_prompt.grad
-                                current_prompt.grad.zero_()
-
-                        if inner_step == 0 or (inner_step + 1) % inner_steps == 0:
-                            print(f"  Inner Step {inner_step + 1}/{inner_steps}, Loss: {inner_loss:.4f}")
-
-                    # ==========================================
-                    # Outer Loop: Meta-update on Query Classes
-                    # ==========================================
-                    meta_loss = self._prompt_outer_step(
-                        current_prompt, support_loader, query_loader
-                    )
-
-                    # Reset to initial prompt
-                    with torch.no_grad():
-                        current_prompt.data.copy_(initial_prompt)
-
-                    # Meta-update using optimizer
-                    prompt_optimizer.zero_grad()
-                    meta_loss.backward()
-                    prompt_optimizer.step()
-
-                    if episode == 0 or (episode + 1) % 10 == 0 or episode == num_episodes - 1:
-                        print(f"  Meta Loss: {meta_loss.item():.4f}")
-
-                # Save base prompt
-                self.model.prompt_pool[task_id] = current_prompt.detach().clone()
-                base_prompt = current_prompt.detach().clone()
-                print(f"\n[Task {task_id}] Meta-learning completed, base prompt saved")
-
-                continue  # Skip standard training for base task
-
-            # ==========================================
-            # INCREMENTAL TASKS: Standard training (5-shot data)
-            # ==========================================
-            print(f"[Task {task_id}] Using standard training on 5-shot data")
-
-            # Get 5-shot dataset for this incremental task
-            inc_batch_size = meta_cfg.INC_BATCH_SIZE
-            inc_dataset = self.data_manager.get_dataset(
-                task_id, source='train', mode='train', accumulated_past=False, k_shot=k_shot
-            )
-            train_loader = self.data_manager.get_meta_dataloader(
-                inc_dataset, batch_size=inc_batch_size, shuffle=True
+            support_loader = self.data_manager.get_meta_dataloader(
+                support_dataset, batch_size=meta_batch_size, shuffle=True
             )
 
-            print(f"[Task {task_id}] Incremental batch size: {inc_batch_size}")
+            query_loader = self.data_manager.get_meta_dataloader(
+                query_dataset, batch_size=meta_batch_size, shuffle=False
+            )
 
-            # Standard training epochs
-            for epoch in range(inc_epochs):
-                epoch_loss = self._train_prompt_standard(
-                    current_prompt, train_loader, prompt_optimizer
+            # ==========================================
+            # Inner Loop: Adapt on Support Classes
+            # ==========================================
+            initial_prompt = meta_prompt_param.data.clone()
+
+            for inner_step in range(inner_steps):
+                inner_loss = self._prompt_inner_step(
+                    meta_prompt_param, support_loader, query_loader
                 )
 
-                print(f"  Epoch {epoch + 1}/{inc_epochs}, Loss: {epoch_loss:.4f}")
+                # Manual gradient descent (simple SGD)
+                with torch.no_grad():
+                    if meta_prompt_param.grad is not None:
+                        meta_prompt_param.data -= inner_lr * meta_prompt_param.grad
+                        meta_prompt_param.grad.zero_()
 
-            # Save prompt to pool
-            self.model.prompt_pool[task_id] = current_prompt.detach().clone()
-            print(f"\n[Task {task_id}] Standard training completed, prompt saved to pool")
+                if inner_step == 0 or (inner_step + 1) % inner_steps == 0:
+                    print(f"  Inner Step {inner_step + 1}/{inner_steps}, Loss: {inner_loss:.4f}")
+
+            # ==========================================
+            # Outer Loop: Meta-update on Query Classes
+            # ==========================================
+            meta_loss = self._prompt_outer_step(
+                meta_prompt_param, support_loader, query_loader
+            )
+
+            # Reset to initial prompt
+            with torch.no_grad():
+                meta_prompt_param.data.copy_(initial_prompt)
+
+            # Meta-update using optimizer
+            prompt_optimizer.zero_grad()
+            meta_loss.backward()
+            prompt_optimizer.step()
+
+            if episode == 0 or (episode + 1) % 10 == 0 or episode == num_episodes - 1:
+                print(f"  Meta Loss: {meta_loss.item():.4f}")
+
+        # Save meta-learned prompt (this is the shared initialization for all tasks)
+        meta_prompt = meta_prompt_param.detach().clone()
+        print(f"\n[Meta-Learning] Completed! Meta-prompt saved.")
+
+        # ==========================================
+        # Step 2: Fine-tune on ALL tasks (0, 1, 2, 3) starting from meta_prompt
+        # ==========================================
+
+        print(f"\n{'=' * 60}")
+        print("Step 2: Fine-Tuning All Tasks from Meta-Prompt")
+        print(f"{'=' * 60}")
+
+        for task_id in range(self.data_manager.num_tasks):
+            print(f"\n{'=' * 60}")
+            print(f"Fine-Tuning Task {task_id}")
+            print(f"{'=' * 60}")
+
+            # Create prompt initialized from meta_prompt
+            task_prompt = self.model.create_prompt(task_id=task_id)
+            with torch.no_grad():
+                task_prompt.data.copy_(meta_prompt.data)
+            print(f"[Task {task_id}] Initialized from meta-prompt")
+
+            # Setup optimizer
+            task_optimizer = torch.optim.Adam([task_prompt], lr=outer_lr)
+            self.model.freeze_all_except_prompt(task_prompt)
+
+            # ==========================================
+            # Task 0: Fine-tune with FULL-SHOT data
+            # ==========================================
+            if task_id == 0:
+                print(f"[Task {task_id}] Fine-tuning with full-shot data")
+
+                base_batch_size = meta_cfg.BASE_BATCH_SIZE
+                base_dataset = self.data_manager.get_dataset(
+                    task_id, source='train', mode='train', accumulated_past=False, k_shot=None  # Full-shot!
+                )
+                train_loader = self.data_manager.get_meta_dataloader(
+                    base_dataset, batch_size=base_batch_size, shuffle=True
+                )
+
+                print(f"[Task {task_id}] Batch size: {base_batch_size}, Epochs: {base_finetune_epochs}")
+
+                for epoch in range(base_finetune_epochs):
+                    epoch_loss = self._train_prompt_standard(
+                        task_prompt, train_loader, task_optimizer
+                    )
+                    print(f"  Epoch {epoch + 1}/{base_finetune_epochs}, Loss: {epoch_loss:.4f}")
+
+            # ==========================================
+            # Tasks 1,2,3: Fine-tune with 5-SHOT data
+            # ==========================================
+            else:
+                print(f"[Task {task_id}] Fine-tuning with 5-shot data")
+
+                inc_batch_size = meta_cfg.INC_BATCH_SIZE
+                inc_dataset = self.data_manager.get_dataset(
+                    task_id, source='train', mode='train', accumulated_past=False, k_shot=k_shot
+                )
+                train_loader = self.data_manager.get_meta_dataloader(
+                    inc_dataset, batch_size=inc_batch_size, shuffle=True
+                )
+
+                print(f"[Task {task_id}] Batch size: {inc_batch_size}, Epochs: {inc_epochs}")
+
+                for epoch in range(inc_epochs):
+                    epoch_loss = self._train_prompt_standard(
+                        task_prompt, train_loader, task_optimizer
+                    )
+                    print(f"  Epoch {epoch + 1}/{inc_epochs}, Loss: {epoch_loss:.4f}")
+
+            # Save task-specific prompt to pool
+            self.model.prompt_pool[task_id] = task_prompt.detach().clone()
+            print(f"\n[Task {task_id}] Fine-tuning completed, prompt saved to pool")
 
         print("\n" + "=" * 60)
         print("Meta-Learning Completed!")

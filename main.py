@@ -94,7 +94,9 @@ def extend_cfg(cfg):
     cfg.TRAINER.BiMC.META.PROMPT_LENGTH = 4
     cfg.TRAINER.BiMC.META.PROMPT_DIM = 768  # ViT-B/16 hidden dimension
     cfg.TRAINER.BiMC.META.BATCH_SIZE = 16  # Batch size for meta-learning (base task)
+    cfg.TRAINER.BiMC.META.BASE_BATCH_SIZE = 64  # Batch size for base task fine-tuning (full-shot)
     cfg.TRAINER.BiMC.META.INC_BATCH_SIZE = 64  # Batch size for incremental tasks standard training
+    cfg.TRAINER.BiMC.META.BASE_FINETUNE_EPOCHS = 5  # Fine-tuning epochs for base task
     cfg.TRAINER.BiMC.META.INC_EPOCHS = 10  # Epochs for incremental tasks standard training
 
 
