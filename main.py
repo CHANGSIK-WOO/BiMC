@@ -126,8 +126,8 @@ def main():
     parser.add_argument('--train_cfg', type=str, help="Path to the training configuration file")
     parser.add_argument('--hyperparam_sweep', action='store_true',
                         help="Run hyperparameter sweep for edge method")
-    parser.add_argument('--meta', action='store_true',
-                        help="Run meta-learning for prompt learning")
+    parser.add_argument('--prompt', action='store_true',
+                        help="Use learnable prompts (runs meta-learning)")
     parser.add_argument('--prompt_checkpoint', type=str, default=None,
                         help="Path to prompt checkpoint (skips meta-learning if provided)")
 
@@ -153,7 +153,7 @@ def main():
 
         print("=" * 60)
         print("Starting Hyperparameter Sweep for Edge Method")
-        if args.meta:
+        if args.prompt:
             print("Mode: Meta-learning with prompts")
         else:
             print("Mode: Standard training")
@@ -181,7 +181,7 @@ def main():
                 # Create a new engine for each run
                 engine = Runner(cfg)
 
-                if args.meta:
+                if args.prompt:
                     # Meta-learning mode with hyperparameter sweep
                     if args.prompt_checkpoint:
                         ckpt = args.prompt_checkpoint
@@ -218,7 +218,7 @@ def main():
         # Single run without hyperparameter sweep
         engine = Runner(cfg)
 
-        if args.meta:
+        if args.prompt:
             # Meta-learning or checkpoint-based mode
             if args.prompt_checkpoint:
                 ckpt = args.prompt_checkpoint
