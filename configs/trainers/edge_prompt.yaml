@@ -46,7 +46,7 @@ TRAINER:
       NUM_EPISODES: 100  # Number of meta-training episodes (base task only)
       INC_EPOCHS: 10      # Number of training epochs for incremental tasks (standard training)
       INNER_LR: 0.01     # Learning rate for inner loop (prompt adaptation on base task)
-      OUTER_LR: 0.001    # Learning rate for outer loop (meta-update on base task)
+      OUTER_LR: 0.0001    # Learning rate for outer loop (meta-update on base task)
       INNER_STEPS: 10    # Number of inner loop gradient steps
 
       # Base session split (task 1): Sample 35 classes randomly per episode, 5-shot
