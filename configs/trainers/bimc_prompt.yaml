@@ -1,0 +1,57 @@
+SEED: 1
+
+DEVICE:
+  DEVICE_NAME: "cuda"
+  GPU_ID: "0;"
+
+DATALOADER:
+  TRAIN:
+    BATCH_SIZE_BASE: 64  # Normal batch size for evaluation
+    BATCH_SIZE_INC: 64   # Normal batch size for evaluation
+  TEST:
+    BATCH_SIZE: 64      # Normal batch size for evaluation
+  NUM_WORKERS: 4
+
+
+MODEL:
+  BACKBONE:
+    NAME: "ViT-B/16"  #  RN50  RN101  ViT-B/32  ViT-B/16  ViT-L/14
+
+
+TRAINER:
+  BiMC:
+    METHOD: "bimc_prompt"  # BiMC with prompt-based meta-learning (no edge features)
+    PREC: "fp32"  # fp16, fp32, amp
+
+    VISION_CALIBRATION: True
+    LAMBDA_I: 0.1
+    TAU: 16
+
+    TEXT_CALIBRATION: True
+    LAMBDA_T: 0.5
+
+    GAMMA_BASE: 1.0
+    GAMMA_INC: 5.0
+
+    # Meta-learning specific parameters (prompt-based)
+    META:
+      ENABLED: True
+      NUM_EPISODES: 50  # Number of meta-training episodes (incremental tasks)
+      BASE_EPOCHS: 5     # Number of training epochs for base task
+      INNER_LR: 0.01     # Learning rate for inner loop (prompt adaptation)
+      OUTER_LR: 0.001    # Learning rate for outer loop (meta-update)
+      INNER_STEPS: 3     # Number of inner loop gradient steps
+
+      # Incremental sessions split (task 2,3,4): 30 support / 5 query classes
+      INC_SUPPORT_CLASSES: 30
+      INC_QUERY_CLASSES: 5
+      SUPPORT_SHOT: 5    # Number of samples per class for support/query sets (incremental only)
+
+      # Prompt parameters
+      PROMPT_LENGTH: 4        # Number of learnable prompt tokens
+      PROMPT_DIM: 768         # Dimension of each prompt token (ViT-B/16 hidden dim)
+      BATCH_SIZE: 4          # Batch size for meta-learning (incremental tasks)
+      BASE_BATCH_SIZE: 64     # Batch size for base task standard training
+
+    # No ensemble for prompt-based approach
+    USING_ENSEMBLE: False

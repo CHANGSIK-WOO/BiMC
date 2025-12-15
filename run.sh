@@ -11,23 +11,32 @@
 #SBATCH -e ./logs/%N_%x_%j.err
 
 
-# Ours
+DATA_CFG=./configs/datasets/domainnet.yaml
 
-#python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/bimc.yaml
+# Base Line
+python main.py --data_cfg $DATA_CFG \
+               --train_cfg ./configs/trainers/bimc.yaml
 
-#python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/bimc_ensemble.yaml
+python main.py --data_cfg $DATA_CFG \
+               --train_cfg ./configs/trainers/bimc_ensemble.yaml
 
-#python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge.yaml --hyperparam_sweep
-#
-#python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge_ensemble.yaml --hyperparam_sweep
+# Edge
 
-#python main.py --data_cfg ./configs/datasets/domainnet.yaml --train_cfg ./configs/trainers/edge_meta.yaml --prompt
-
-python main.py --data_cfg configs/datasets/domainnet.yaml \
-               --train_cfg configs/trainers/edge_meta.yaml \
+python main.py --data_cfg $DATA_CFG \
+               --train_cfg ./configs/trainers/edge_meta.yaml \
                --hyperparam_sweep
 
-python main.py --data_cfg configs/datasets/domainnet.yaml \
-               --train_cfg configs/trainers/edge_meta.yaml \
-               --hyperparam_sweep --prompt \
+# Prompt
+
+python main.py --data_cfg $DATA_CFG \
+               --train_cfg ./configs/trainers/bimc_prompt.yaml \
+               --prompt \
+               --prompt_checkpoint outputs/prompts_latest.pth
+
+# Edge + Prompt
+
+python main.py --data_cfg $DATA_CFG \
+               --train_cfg ./configs/trainers/edge_meta.yaml \
+               --hyperparam_sweep \
+               --prompt \
                --prompt_checkpoint outputs/prompts_latest.pth
