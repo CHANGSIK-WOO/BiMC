@@ -21,22 +21,19 @@ python main.py --data_cfg $DATA_CFG \
                --train_cfg ./configs/trainers/bimc_ensemble.yaml
 
 # Edge
-
 python main.py --data_cfg $DATA_CFG \
                --train_cfg ./configs/trainers/edge_meta.yaml \
                --hyperparam_sweep
 
 # Prompt
-
 python main.py --data_cfg $DATA_CFG \
                --train_cfg ./configs/trainers/bimc_prompt.yaml \
                --prompt \
-               --prompt_checkpoint outputs/prompts_latest.pth
+#               --prompt_checkpoint outputs/prompts_latest.pth
 
 # Edge + Prompt
-
 python main.py --data_cfg $DATA_CFG \
                --train_cfg ./configs/trainers/edge_meta.yaml \
                --hyperparam_sweep \
                --prompt \
-               --prompt_checkpoint outputs/prompts_latest.pth
+#               --prompt_checkpoint outputs/prompts_latest.pth
