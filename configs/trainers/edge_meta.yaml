@@ -48,10 +48,6 @@ TRAINER:
       OUTER_LR: 0.001    # Learning rate for outer loop (meta-update)
       INNER_STEPS: 3     # Number of inner loop gradient steps
 
-      # Base session split (task 1): 200 support / 40 query classes
-      BASE_SUPPORT_CLASSES: 200
-      BASE_QUERY_CLASSES: 40
-
       # Incremental sessions split (task 2,3,4): 30 support / 5 query classes
       INC_SUPPORT_CLASSES: 30
       INC_QUERY_CLASSES: 5
@@ -59,7 +55,7 @@ TRAINER:
       # Prompt parameters
       PROMPT_LENGTH: 4        # Number of learnable prompt tokens
       PROMPT_DIM: 768         # Dimension of each prompt token (ViT-B/16 hidden dim)
-      BATCH_SIZE: 16          # Batch size for meta-learning (incremental tasks)
+      BATCH_SIZE: 4          # Batch size for meta-learning (incremental tasks)
       BASE_BATCH_SIZE: 64     # Batch size for base task standard training
 
     # No ensemble for prompt-based approach

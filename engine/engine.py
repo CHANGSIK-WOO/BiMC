@@ -413,7 +413,7 @@ class Runner:
                 # Get full training data for base task with larger batch size
                 base_batch_size = meta_cfg.BASE_BATCH_SIZE
                 base_dataset = self.data_manager.get_dataset(
-                    task_id, source='train', mode='train', accumulate_past=False
+                    task_id, source='train', mode='train', accumulated_past=False
                 )
                 train_loader = self.data_manager.get_meta_dataloader(
                     base_dataset, batch_size=base_batch_size, shuffle=True
@@ -424,13 +424,13 @@ class Runner:
                 # Standard training epochs
                 base_epochs = num_episodes  # Reuse num_episodes as epoch count for base
 
-                for epoch in range(base_epochs):
-                    epoch_loss = self._train_prompt_standard(
-                        current_prompt, train_loader, prompt_optimizer
-                    )
-
-                    if epoch == 0 or (epoch + 1) % 10 == 0 or epoch == base_epochs - 1:
-                        print(f"  Epoch {epoch + 1}/{base_epochs}, Loss: {epoch_loss:.4f}")
+                # for epoch in range(base_epochs):
+                #     epoch_loss = self._train_prompt_standard(
+                #         current_prompt, train_loader, prompt_optimizer
+                #     )
+                #
+                #     if epoch == 0 or (epoch + 1) % 10 == 0 or epoch == base_epochs - 1:
+                #         print(f"  Epoch {epoch + 1}/{base_epochs}, Loss: {epoch_loss:.4f}")
 
                 # Save base prompt
                 self.model.prompt_pool[task_id] = current_prompt.detach().clone()
