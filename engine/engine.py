@@ -430,8 +430,7 @@ class Runner:
                         current_prompt, train_loader, prompt_optimizer
                     )
 
-                    if epoch == 0 or (epoch + 1) % 10 == 0 or epoch == base_epochs - 1:
-                        print(f"  Epoch {epoch + 1}/{base_epochs}, Loss: {epoch_loss:.4f}")
+                    print(f"  Epoch {epoch + 1}/{base_epochs}, Loss: {epoch_loss:.4f}")
 
                 # Save base prompt
                 self.model.prompt_pool[task_id] = current_prompt.detach().clone()
