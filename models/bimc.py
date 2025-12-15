@@ -143,15 +143,15 @@ class BiMC(nn.Module):
         for batch in tqdm(loader, desc="Extracting image features", leave=False):
             images, labels = self.parse_batch(batch)
 
-            # ---- Original CLIP features ----
-            features = self.clip_model.encode_image(images)
+            # ---- Original CLIP features (with prompt if available) ----
+            features = self.clip_model.encode_image(images, use_prompt=True)
             features = F.normalize(features, dim=-1)
             all_features.append(features)
             all_labels.append(labels)
 
-            # ---- EDGE: Invariant features (LoG edge extraction) ----
+            # ---- EDGE: Invariant features (LoG edge extraction, NO PROMPT) ----
             if self.edge:
-                # Always use fixed parameters (no router)
+                # Always use fixed parameters (no router) and NO prompt
                 edge_feat = self._extract_edge_features(images, labels)
                 all_edge_features.append(edge_feat)
 
@@ -267,8 +267,8 @@ class BiMC(nn.Module):
                     vutils.save_image(edge_img[i].clamp(0, 1), edge_path)
         # if not self.meta_training:
         #     print(router_params)
-        # === Encode with CLIP ===
-        inv_feat = self.clip_model.encode_image(edge_img)
+        # === Encode with CLIP (NO PROMPT for edge features) ===
+        inv_feat = self.clip_model.encode_image(edge_img, use_prompt=False)
         inv_feat = F.normalize(inv_feat, dim=-1)
 
         return inv_feat
@@ -486,10 +486,19 @@ class BiMC(nn.Module):
         logits = prob_fused
         return logits
 
-    @torch.no_grad()
-    def extract_img_feature(self, images):
+    def extract_img_feature(self, images, use_prompt=True):
+        """
+        Extract image features using CLIP.
+
+        Args:
+            images: Input images
+            use_prompt: Whether to use prompt (default: True)
+
+        Returns:
+            image_features: CLIP image embeddings
+        """
         images = images.to(self.device)
-        image_features = self.clip_model.encode_image(images)
+        image_features = self.clip_model.encode_image(images, use_prompt=use_prompt)
         return image_features
 
     @torch.no_grad()
