@@ -111,7 +111,7 @@ class DGFSCILDataManager:
         }
         return domain_mapping.get(session_id, 'real')
 
-    def get_dataset(self, task_id, source, mode=None, accumulated_past=False):
+    def get_dataset(self, task_id, source, mode=None, accumulated_past=False, k_shot=None):
         """
         Get dataset for a specific task/session.
 
@@ -124,6 +124,7 @@ class DGFSCILDataManager:
             source: 'train' or 'test'
             mode: Transform mode ('train' or 'test')
             accumulated_past: Whether to include past session classes (for testing)
+            k_shot: Override shot number (if None, use default from config)
         """
         assert 0 <= task_id < self.num_tasks, \
             f"task_id {task_id} should be in range [0, {self.num_tasks - 1}]"
@@ -157,7 +158,12 @@ class DGFSCILDataManager:
             transform = self.test_transform  # Default to test transform
 
         # Select samples
-        num_shot = self.num_base_shot if task_id == 0 else self.num_inc_shot
+        # If k_shot is provided, use it; otherwise use default from config
+        if k_shot is not None:
+            num_shot = k_shot
+        else:
+            num_shot = self.num_base_shot if task_id == 0 else self.num_inc_shot
+
         data, targets = self._select_data_from_class_index(x, y, class_idx, num_shot, source)
 
         # Build class to task mapping

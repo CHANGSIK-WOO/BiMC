@@ -343,16 +343,16 @@ class Runner:
         """
         Meta-learning training loop for learnable prompts.
 
-        Task structure:
-            - Task 1 (base): Train prompt with 200 support / 40 query class split
-            - Task 2,3,4 (incremental): Train prompts with 30 support / 5 query class split
-            - Each incremental prompt starts from the base prompt (not previous task)
+        Task structure (CORRECTED):
+            - Task 1 (base): Meta-learning with random 35-class episodes (28 support / 7 query, 5-shot)
+            - Task 2,3,4 (incremental): Standard training on 5-shot data from each task
+            - Each incremental prompt starts from the base prompt
 
         Meta-objective:
             - Maximize image-text embedding similarity (cosine similarity)
         """
         print("\n" + "=" * 60)
-        print("Meta-Learning: Training Learnable Prompts")
+        print("Meta-Learning: Training Learnable Prompts (Corrected Structure)")
         print("=" * 60)
 
         # Ensure this is DG-FSCIL dataset
@@ -364,27 +364,27 @@ class Runner:
         # Get meta-learning config
         meta_cfg = self.cfg.TRAINER.BiMC.META
         num_episodes = meta_cfg.NUM_EPISODES
-        base_epochs = meta_cfg.BASE_EPOCHS
+        inc_epochs = meta_cfg.INC_EPOCHS
         inner_lr = meta_cfg.INNER_LR
         outer_lr = meta_cfg.OUTER_LR
         inner_steps = meta_cfg.INNER_STEPS
 
-        inc_support_classes = meta_cfg.INC_SUPPORT_CLASSES
-        inc_query_classes = meta_cfg.INC_QUERY_CLASSES
+        base_support_classes = meta_cfg.BASE_SUPPORT_CLASSES
+        base_query_classes = meta_cfg.BASE_QUERY_CLASSES
         k_shot = meta_cfg.SUPPORT_SHOT
 
-        print(f"Base epochs: {base_epochs}")
-        print(f"Incremental episodes: {num_episodes}")
+        print(f"Base meta-learning episodes: {num_episodes}")
+        print(f"Incremental standard epochs: {inc_epochs}")
         print(f"Inner LR: {inner_lr}, Outer LR: {outer_lr}")
         print(f"Inner Steps: {inner_steps}")
-        print(f"Incremental split: {inc_support_classes} support / {inc_query_classes} query ({k_shot}-shot)")
+        print(f"Base split per episode: {base_support_classes} support / {base_query_classes} query ({k_shot}-shot)")
         print("=" * 60 + "\n")
 
         # ==========================================
         # Sequential Task Training: Task 1 → Task 2 → Task 3 → Task 4
         # ==========================================
 
-        base_prompt = None  # Will be saved after task 1 training
+        base_prompt = None  # Will be saved after task 1 meta-learning
 
         # Train each task sequentially
         for task_id in range(self.data_manager.num_tasks):
@@ -408,102 +408,104 @@ class Runner:
             self.model.freeze_all_except_prompt(current_prompt)
 
             # ==========================================
-            # BASE TASK: Standard training (all classes)
+            # BASE TASK: Meta-learning (sample 35 classes per episode, 5-shot)
             # ==========================================
             if task_id == 0:
-                print(f"[Task {task_id}] Using standard training on all classes")
+                print(f"[Task {task_id}] Using meta-learning with random class sampling")
+                print(f"[Task {task_id}] Each episode: {base_support_classes} support + {base_query_classes} query classes ({k_shot}-shot)")
 
-                # Get full training data for base task with larger batch size
-                base_batch_size = meta_cfg.BASE_BATCH_SIZE
-                base_dataset = self.data_manager.get_dataset(
-                    task_id, source='train', mode='train', accumulated_past=False
-                )
-                train_loader = self.data_manager.get_meta_dataloader(
-                    base_dataset, batch_size=base_batch_size, shuffle=True
-                )
+                num_support = base_support_classes
+                num_query = base_query_classes
+                meta_batch_size = meta_cfg.BATCH_SIZE
 
-                print(f"[Task {task_id}] Base batch size: {base_batch_size}")
+                # Meta-training episodes for base task
+                for episode in range(num_episodes):
+                    print(f"\n[Task {task_id}, Episode {episode + 1}/{num_episodes}]")
 
-                # Standard training epochs (use BASE_EPOCHS from config)
-                for epoch in range(base_epochs):
-                    epoch_loss = self._train_prompt_standard(
-                        current_prompt, train_loader, prompt_optimizer
+                    # Get random class split from base task (with k-shot sampling)
+                    support_dataset, query_dataset = \
+                        self.data_manager.get_class_split(task_id, num_support, num_query, k_shot=k_shot)
+
+                    support_loader = self.data_manager.get_meta_dataloader(
+                        support_dataset, batch_size=meta_batch_size, shuffle=True
                     )
 
-                    print(f"  Epoch {epoch + 1}/{base_epochs}, Loss: {epoch_loss:.4f}")
+                    query_loader = self.data_manager.get_meta_dataloader(
+                        query_dataset, batch_size=meta_batch_size, shuffle=False
+                    )
+
+                    # ==========================================
+                    # Inner Loop: Adapt on Support Classes
+                    # ==========================================
+                    initial_prompt = current_prompt.data.clone()
+
+                    for inner_step in range(inner_steps):
+                        inner_loss = self._prompt_inner_step(
+                            current_prompt, support_loader, query_loader
+                        )
+
+                        # Manual gradient descent (simple SGD)
+                        with torch.no_grad():
+                            if current_prompt.grad is not None:
+                                current_prompt.data -= inner_lr * current_prompt.grad
+                                current_prompt.grad.zero_()
+
+                        if inner_step == 0 or (inner_step + 1) % inner_steps == 0:
+                            print(f"  Inner Step {inner_step + 1}/{inner_steps}, Loss: {inner_loss:.4f}")
+
+                    # ==========================================
+                    # Outer Loop: Meta-update on Query Classes
+                    # ==========================================
+                    meta_loss = self._prompt_outer_step(
+                        current_prompt, support_loader, query_loader
+                    )
+
+                    # Reset to initial prompt
+                    with torch.no_grad():
+                        current_prompt.data.copy_(initial_prompt)
+
+                    # Meta-update using optimizer
+                    prompt_optimizer.zero_grad()
+                    meta_loss.backward()
+                    prompt_optimizer.step()
+
+                    if episode == 0 or (episode + 1) % 10 == 0 or episode == num_episodes - 1:
+                        print(f"  Meta Loss: {meta_loss.item():.4f}")
 
                 # Save base prompt
                 self.model.prompt_pool[task_id] = current_prompt.detach().clone()
                 base_prompt = current_prompt.detach().clone()
-                print(f"\n[Task {task_id}] Standard training completed, base prompt saved")
+                print(f"\n[Task {task_id}] Meta-learning completed, base prompt saved")
 
-                continue  # Skip meta-learning for base task
+                continue  # Skip standard training for base task
 
             # ==========================================
-            # INCREMENTAL TASKS: Meta-learning
+            # INCREMENTAL TASKS: Standard training (5-shot data)
             # ==========================================
-            num_support = inc_support_classes
-            num_query = inc_query_classes
+            print(f"[Task {task_id}] Using standard training on 5-shot data")
 
-            # Meta-training episodes for this task
-            for episode in range(num_episodes):
-                print(f"\n[Task {task_id}, Episode {episode + 1}/{num_episodes}]")
+            # Get 5-shot dataset for this incremental task
+            inc_batch_size = meta_cfg.INC_BATCH_SIZE
+            inc_dataset = self.data_manager.get_dataset(
+                task_id, source='train', mode='train', accumulated_past=False, k_shot=k_shot
+            )
+            train_loader = self.data_manager.get_meta_dataloader(
+                inc_dataset, batch_size=inc_batch_size, shuffle=True
+            )
 
-                # Get class split for this task (with k-shot sampling)
-                support_dataset, query_dataset = \
-                    self.data_manager.get_class_split(task_id, num_support, num_query, k_shot=k_shot)
+            print(f"[Task {task_id}] Incremental batch size: {inc_batch_size}")
 
-                meta_batch_size = meta_cfg.BATCH_SIZE
-
-                support_loader = self.data_manager.get_meta_dataloader(
-                    support_dataset, batch_size=meta_batch_size, shuffle=True
+            # Standard training epochs
+            for epoch in range(inc_epochs):
+                epoch_loss = self._train_prompt_standard(
+                    current_prompt, train_loader, prompt_optimizer
                 )
 
-                query_loader = self.data_manager.get_meta_dataloader(
-                    query_dataset, batch_size=meta_batch_size, shuffle=False
-                )
-
-                # ==========================================
-                # Inner Loop: Adapt on Support Classes
-                # ==========================================
-                initial_prompt = current_prompt.data.clone()
-
-                for inner_step in range(inner_steps):
-                    inner_loss = self._prompt_inner_step(
-                        current_prompt, support_loader, query_loader
-                    )
-
-                    # Manual gradient descent (simple SGD)
-                    with torch.no_grad():
-                        if current_prompt.grad is not None:
-                            current_prompt.data -= inner_lr * current_prompt.grad
-                            current_prompt.grad.zero_()
-
-                    if inner_step == 0 or (inner_step + 1) % inner_steps == 0:
-                        print(f"  Inner Step {inner_step + 1}/{inner_steps}, Loss: {inner_loss:.4f}")
-
-                # ==========================================
-                # Outer Loop: Meta-update on Query Classes
-                # ==========================================
-                meta_loss = self._prompt_outer_step(
-                    current_prompt, support_loader, query_loader
-                )
-
-                # Reset to initial prompt
-                with torch.no_grad():
-                    current_prompt.data.copy_(initial_prompt)
-
-                # Meta-update using optimizer
-                prompt_optimizer.zero_grad()
-                meta_loss.backward()
-                prompt_optimizer.step()
-
-                if episode == 0 or (episode + 1) % 10 == 0 or episode == num_episodes - 1:
-                    print(f"  Meta Loss: {meta_loss.item():.4f}")
+                print(f"  Epoch {epoch + 1}/{inc_epochs}, Loss: {epoch_loss:.4f}")
 
             # Save prompt to pool
             self.model.prompt_pool[task_id] = current_prompt.detach().clone()
-            print(f"\n[Task {task_id}] Meta-learning completed, prompt saved to pool")
+            print(f"\n[Task {task_id}] Standard training completed, prompt saved to pool")
 
         print("\n" + "=" * 60)
         print("Meta-Learning Completed!")

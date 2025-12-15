@@ -43,22 +43,22 @@ TRAINER:
     # Meta-learning specific parameters (prompt-based)
     META:
       ENABLED: True
-      NUM_EPISODES: 50  # Number of meta-training episodes (incremental tasks)
-      BASE_EPOCHS: 5     # Number of training epochs for base task
-      INNER_LR: 0.01     # Learning rate for inner loop (prompt adaptation)
-      OUTER_LR: 0.001    # Learning rate for outer loop (meta-update)
-      INNER_STEPS: 10     # Number of inner loop gradient steps
+      NUM_EPISODES: 100  # Number of meta-training episodes (base task only)
+      INC_EPOCHS: 10      # Number of training epochs for incremental tasks (standard training)
+      INNER_LR: 0.01     # Learning rate for inner loop (prompt adaptation on base task)
+      OUTER_LR: 0.001    # Learning rate for outer loop (meta-update on base task)
+      INNER_STEPS: 10    # Number of inner loop gradient steps
 
-      # Incremental sessions split (task 2,3,4): 30 support / 5 query classes
-      INC_SUPPORT_CLASSES: 30
-      INC_QUERY_CLASSES: 5
-      SUPPORT_SHOT: 5    # Number of samples per class for support/query sets (incremental only)
+      # Base session split (task 1): Sample 35 classes randomly per episode, 5-shot
+      BASE_SUPPORT_CLASSES: 28  # Support classes for base meta-learning
+      BASE_QUERY_CLASSES: 7     # Query classes for base meta-learning
+      SUPPORT_SHOT: 5    # Number of samples per class (5-shot setting)
 
       # Prompt parameters
       PROMPT_LENGTH: 4        # Number of learnable prompt tokens
       PROMPT_DIM: 768         # Dimension of each prompt token (ViT-B/16 hidden dim)
-      BATCH_SIZE: 4          # Batch size for meta-learning (incremental tasks)
-      BASE_BATCH_SIZE: 64     # Batch size for base task standard training
+      BATCH_SIZE: 4          # Batch size for meta-learning (base task)
+      INC_BATCH_SIZE: 64     # Batch size for incremental tasks (standard training)
 
     # No ensemble for prompt-based approach
     USING_ENSEMBLE: False
