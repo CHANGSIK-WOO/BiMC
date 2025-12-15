@@ -368,16 +368,13 @@ class Runner:
         outer_lr = meta_cfg.OUTER_LR
         inner_steps = meta_cfg.INNER_STEPS
 
-        base_support_classes = meta_cfg.BASE_SUPPORT_CLASSES
-        base_query_classes = meta_cfg.BASE_QUERY_CLASSES
         inc_support_classes = meta_cfg.INC_SUPPORT_CLASSES
         inc_query_classes = meta_cfg.INC_QUERY_CLASSES
 
         print(f"Episodes: {num_episodes}")
         print(f"Inner LR: {inner_lr}, Outer LR: {outer_lr}")
         print(f"Inner Steps: {inner_steps}")
-        print(f"Base split: {base_support_classes} support / {base_query_classes} query")
-        print(f"Inc split: {inc_support_classes} support / {inc_query_classes} query")
+        print(f"Incremental split: {inc_support_classes} support / {inc_query_classes} query")
         print("=" * 60 + "\n")
 
         # ==========================================
@@ -391,14 +388,6 @@ class Runner:
             print(f"\n{'=' * 60}")
             print(f"Training Task {task_id}")
             print(f"{'=' * 60}")
-
-            # Determine support/query class split
-            if task_id == 0:  # Base task
-                num_support = base_support_classes
-                num_query = base_query_classes
-            else:  # Incremental tasks
-                num_support = inc_support_classes
-                num_query = inc_query_classes
 
             # Create a new prompt for this task
             current_prompt = self.model.create_prompt(task_id=task_id)
@@ -414,6 +403,47 @@ class Runner:
 
             # Freeze CLIP model
             self.model.freeze_all_except_prompt(current_prompt)
+
+            # ==========================================
+            # BASE TASK: Standard training (all classes)
+            # ==========================================
+            if task_id == 0:
+                print(f"[Task {task_id}] Using standard training on all classes")
+
+                # Get full training data for base task with larger batch size
+                base_batch_size = meta_cfg.BASE_BATCH_SIZE
+                base_dataset = self.data_manager.get_dataset(
+                    task_id, source='train', mode='train', accumulate_past=False
+                )
+                train_loader = self.data_manager.get_meta_dataloader(
+                    base_dataset, batch_size=base_batch_size, shuffle=True
+                )
+
+                print(f"[Task {task_id}] Base batch size: {base_batch_size}")
+
+                # Standard training epochs
+                base_epochs = num_episodes  # Reuse num_episodes as epoch count for base
+
+                for epoch in range(base_epochs):
+                    epoch_loss = self._train_prompt_standard(
+                        current_prompt, train_loader, prompt_optimizer
+                    )
+
+                    if epoch == 0 or (epoch + 1) % 10 == 0 or epoch == base_epochs - 1:
+                        print(f"  Epoch {epoch + 1}/{base_epochs}, Loss: {epoch_loss:.4f}")
+
+                # Save base prompt
+                self.model.prompt_pool[task_id] = current_prompt.detach().clone()
+                base_prompt = current_prompt.detach().clone()
+                print(f"\n[Task {task_id}] Standard training completed, base prompt saved")
+
+                continue  # Skip meta-learning for base task
+
+            # ==========================================
+            # INCREMENTAL TASKS: Meta-learning
+            # ==========================================
+            num_support = inc_support_classes
+            num_query = inc_query_classes
 
             # Meta-training episodes for this task
             for episode in range(num_episodes):
@@ -473,12 +503,7 @@ class Runner:
 
             # Save prompt to pool
             self.model.prompt_pool[task_id] = current_prompt.detach().clone()
-            print(f"\n[Task {task_id}] Training completed, prompt saved to pool")
-
-            # Save base prompt for incremental tasks
-            if task_id == 0:
-                base_prompt = current_prompt.detach().clone()
-                print(f"[Task {task_id}] Base prompt saved for incremental tasks")
+            print(f"\n[Task {task_id}] Meta-learning completed, prompt saved to pool")
 
         print("\n" + "=" * 60)
         print("Meta-Learning Completed!")
@@ -519,7 +544,7 @@ class Runner:
         support_labels_set = set()
 
         # Build text embeddings for support classes
-        for batch in support_loader:
+        for batch in tqdm(support_loader, desc="  Support", leave=False):
             images, labels = self.parse_batch(batch)
             for label in labels:
                 label_idx = label.item()
@@ -534,7 +559,7 @@ class Runner:
         total_loss_tensor = 0.0
         num_samples = 0
 
-        for batch in query_loader:
+        for batch in tqdm(query_loader, desc="  Query", leave=False):
             images, labels = self.parse_batch(batch)
 
             # Extract image features with prompt
@@ -580,7 +605,7 @@ class Runner:
         # Build text embeddings for support classes
         text_embeddings_dict = {}
 
-        for batch in support_loader:
+        for batch in tqdm(support_loader, desc="  Support", leave=False):
             images, labels = self.parse_batch(batch)
             for label in labels:
                 label_idx = label.item()
@@ -593,7 +618,7 @@ class Runner:
         total_loss = 0.0
         num_samples = 0
 
-        for batch in query_loader:
+        for batch in tqdm(query_loader, desc="  Query", leave=False):
             images, labels = self.parse_batch(batch)
 
             img_feat = self.model.extract_img_feature(images)
@@ -620,6 +645,56 @@ class Runner:
 
         meta_loss = total_loss / max(num_samples, 1)
         return meta_loss
+
+    def _train_prompt_standard(self, prompt, train_loader, optimizer):
+        """
+        Standard training for base task: all classes, standard gradient descent.
+
+        Args:
+            prompt: Learnable prompt parameter
+            train_loader: Training data loader
+            optimizer: Optimizer for prompt
+
+        Returns:
+            avg_loss: Average loss for this epoch
+        """
+        self.model.set_prompt(prompt)
+
+        total_loss = 0.0
+        num_samples = 0
+
+        for batch in tqdm(train_loader, desc="  Training", leave=False):
+            images, labels = self.parse_batch(batch)
+
+            # Extract image features with prompt
+            img_feat = self.model.extract_img_feature(images)
+            img_feat = F.normalize(img_feat, dim=-1)
+
+            # Get text embeddings for all classes in batch
+            batch_text_embs = []
+            for label in labels:
+                label_idx = label.item()
+                class_name = self.data_manager.class_names[label_idx]
+                text_emb = self._get_text_embedding(class_name)
+                batch_text_embs.append(text_emb)
+
+            batch_text_embs = torch.stack(batch_text_embs, dim=0)
+            batch_text_embs = F.normalize(batch_text_embs, dim=-1)
+
+            # Maximize cosine similarity
+            similarity = (img_feat * batch_text_embs).sum(dim=1)
+            loss = -similarity.mean()
+
+            # Standard gradient descent
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item() * images.size(0)
+            num_samples += images.size(0)
+
+        avg_loss = total_loss / max(num_samples, 1)
+        return avg_loss
 
     @torch.no_grad()
     def _get_text_embedding(self, class_name):

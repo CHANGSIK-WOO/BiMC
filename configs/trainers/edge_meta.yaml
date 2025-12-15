@@ -59,7 +59,8 @@ TRAINER:
       # Prompt parameters
       PROMPT_LENGTH: 4        # Number of learnable prompt tokens
       PROMPT_DIM: 768         # Dimension of each prompt token (ViT-B/16 hidden dim)
-      BATCH_SIZE: 4          # Batch size for meta-learning
+      BATCH_SIZE: 16          # Batch size for meta-learning (incremental tasks)
+      BASE_BATCH_SIZE: 64     # Batch size for base task standard training
 
     # No ensemble for prompt-based approach
     USING_ENSEMBLE: False
