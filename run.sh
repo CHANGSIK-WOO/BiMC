@@ -21,9 +21,8 @@ DATA_CFG=./configs/datasets/domainnet.yaml
 #               --train_cfg ./configs/trainers/bimc_ensemble.yaml
 
 # Edge
-#python main.py --data_cfg $DATA_CFG \
-#               --train_cfg ./configs/trainers/edge_meta.yaml \
-#               --hyperparam_sweep
+python main.py --data_cfg $DATA_CFG \
+               --train_cfg ./configs/trainers/edge.yaml
 
 # Prompt
 python main.py --data_cfg $DATA_CFG \

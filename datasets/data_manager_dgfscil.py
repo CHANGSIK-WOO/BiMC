@@ -280,6 +280,33 @@ class DGFSCILDataManager:
         if len(ret_x) > 0:
             ret_x = np.concatenate(ret_x)
             ret_y = np.concatenate(ret_y)
+
+            # For test data: interleave classes so batch of 100 contains ~3-4 classes
+            if source == 'test':
+                chunk_size = self.test_batchsize // 4 # Each class contributes ~25 samples at a time
+
+                # Group samples by class
+                class_groups = {}
+                for i, label in enumerate(ret_y):
+                    if label not in class_groups:
+                        class_groups[label] = []
+                    class_groups[label].append(i)
+
+                # Interleave classes in chunks
+                interleaved_indices = []
+                class_pointers = {c: 0 for c in class_groups.keys()}
+                classes = list(class_groups.keys())
+
+                while any(class_pointers[c] < len(class_groups[c]) for c in classes):
+                    for c in classes:
+                        if class_pointers[c] < len(class_groups[c]):
+                            end_idx = min(class_pointers[c] + chunk_size, len(class_groups[c]))
+                            interleaved_indices.extend(class_groups[c][class_pointers[c]:end_idx])
+                            class_pointers[c] = end_idx
+
+                # Apply interleaved order
+                ret_x = ret_x[interleaved_indices]
+                ret_y = ret_y[interleaved_indices]
         else:
             ret_x = np.array([])
             ret_y = np.array([])

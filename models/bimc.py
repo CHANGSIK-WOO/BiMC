@@ -104,8 +104,10 @@ class BiMC(nn.Module):
 
         # Logging
         self.save_imag = False
+        self.save_tsne = False
         self.output_dir = 'outputs'
         self.save_class = [40, 52, 250]
+        self.max_save_count = 50
 
     @torch.no_grad()
     def inference_text_feature(self, class_names, template, cls_begin_index):
@@ -259,12 +261,12 @@ class BiMC(nn.Module):
                 vis_dir = 'vis_train' if self.building else 'vis_test'
                 # Save original (denormalized)
                 orig_path, idx = get_unique_path(f"{self.output_dir}/{self.edge_sigma}/{vis_dir}/origin/{self.task_id}/{label}")
-                if idx < 100:
+                if idx < self.max_save_count:
                     vutils.save_image(denormalize(images[i]).clamp(0, 1), orig_path)
 
                 # Save invariant LoG edge
                 edge_path, idx = get_unique_path(f"{self.output_dir}/{self.edge_sigma}/{vis_dir}/edge/{self.task_id}/{label}")
-                if idx < 100:
+                if idx < self.max_save_count:
                     vutils.save_image(edge_img[i].clamp(0, 1), edge_path)
         # if not self.meta_training:
         #     print(router_params)
@@ -460,6 +462,13 @@ class BiMC(nn.Module):
                 img_feat = (1 - gamma) * img_feat + gamma * edge_feat
                 img_feat = F.normalize(img_feat, dim=-1)
 
+            # Save t-SNE visualization before edge fusion
+            if not self.meta_training and self.save_tsne and edge_proto is not None:
+                original_proto = fused_proto.clone()  # Save before edge fusion
+                fused_proto_after = (1 - gamma) * fused_proto + gamma * edge_proto
+                fused_proto_after = F.normalize(fused_proto_after, dim=-1)
+                self._save_tsne_plot(img_feat, labels, original_proto, edge_proto, fused_proto_after)
+
             fused_proto = (1 - gamma) * fused_proto + gamma * edge_proto
         # ============================================================
 
@@ -501,6 +510,124 @@ class BiMC(nn.Module):
         images = images.to(self.device)
         image_features = self.clip_model.encode_image(images, use_prompt=use_prompt)
         return image_features
+
+    @torch.no_grad()
+    def _save_tsne_plot(self, img_feat, labels, original_proto, edge_proto, fused_proto):
+        """
+        Save t-SNE visualization plot to verify EDGE method assumption.
+
+        For each class, visualize:
+        - Original prototype (before edge fusion): thick circle marker
+        - Edge prototype: thick triangle marker
+        - Fused prototype (after edge fusion): thick star marker
+        - Image features: small circle marker
+
+        Args:
+            img_feat: Image features (B, D)
+            labels: Labels for each image feature (B,)
+            original_proto: Original prototypes before edge fusion (num_cls, D)
+            edge_proto: Edge prototypes (num_cls, D)
+            fused_proto: Fused prototypes after edge fusion (num_cls, D)
+        """
+        save_path, idx = get_unique_path(f"{self.output_dir}/tsne/{self.task_id}")
+        if self.max_save_count < idx:
+            return
+
+        # Only plot if batch has 3 or more classes
+        unique_labels = torch.unique(labels)
+        if len(unique_labels) < 3:
+            return
+
+        try:
+            from sklearn.manifold import TSNE
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+        except ImportError:
+            print("Warning: sklearn or matplotlib not available, skipping t-SNE visualization")
+            return
+
+        # Select only 5 classes for visualization
+        if len(unique_labels) > 5:
+            selected_classes = unique_labels[:5]
+        else:
+            selected_classes = unique_labels
+
+        # Filter img_feat by selected classes
+        mask = torch.zeros(len(labels), dtype=torch.bool, device=labels.device)
+        for cls in selected_classes:
+            mask |= (labels == cls)
+
+        filtered_img_feat = img_feat[mask]
+        filtered_labels = labels[mask]
+
+        # Get corresponding prototypes
+        filtered_original_proto = original_proto[selected_classes]
+        filtered_edge_proto = edge_proto[selected_classes]
+        filtered_fused_proto = fused_proto[selected_classes]
+
+        # Combine all features for t-SNE
+        all_features = torch.cat([
+            filtered_img_feat,
+            filtered_original_proto,
+            filtered_edge_proto,
+            filtered_fused_proto
+        ], dim=0).cpu().numpy()
+
+        # Run t-SNE
+        tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(all_features) - 1))
+        embedded = tsne.fit_transform(all_features)
+
+        # Split embedded features back
+        num_img = len(filtered_img_feat)
+        num_proto = len(filtered_original_proto)
+
+        img_embedded = embedded[:num_img]
+        original_proto_embedded = embedded[num_img:num_img + num_proto]
+        edge_proto_embedded = embedded[num_img + num_proto:num_img + 2 * num_proto]
+        fused_proto_embedded = embedded[num_img + 2 * num_proto:]
+
+        # Create plot
+        fig, ax = plt.subplots(figsize=(10, 8))
+
+        # Define colors for each class
+        colors = ['red', 'blue', 'green', 'orange', 'purple']
+
+        for i, cls in enumerate(selected_classes.cpu().numpy()):
+            color = colors[i % len(colors)]
+
+            # Plot image features (small circles)
+            cls_mask = (filtered_labels == cls).cpu().numpy()
+            if cls_mask.any():
+                ax.scatter(img_embedded[cls_mask, 0], img_embedded[cls_mask, 1],
+                          c=color, marker='o', s=30, alpha=0.6, label=f'Class {cls} (img)')
+
+            # Plot original prototype (thick circle)
+            ax.scatter(original_proto_embedded[i, 0], original_proto_embedded[i, 1],
+                      c=color, marker='o', s=200, edgecolors='black', linewidths=2.0,
+                      label=f'Class {cls} (original proto)')
+
+            # Plot edge prototype (thick triangle)
+            ax.scatter(edge_proto_embedded[i, 0], edge_proto_embedded[i, 1],
+                      c=color, marker='^', s=200, edgecolors='black', linewidths=2.0,
+                      label=f'Class {cls} (edge proto)')
+
+            # Plot fused prototype (thick star)
+            ax.scatter(fused_proto_embedded[i, 0], fused_proto_embedded[i, 1],
+                      c=color, marker='*', s=400, edgecolors='black', linewidths=2.0,
+                      label=f'Class {cls} (fused proto)')
+
+        ax.set_xlabel('t-SNE Dimension 1')
+        ax.set_ylabel('t-SNE Dimension 2')
+        ax.set_title(f'EDGE Method Verification - Task {self.task_id}')
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+
+        # Save plot
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
 
     @torch.no_grad()
     def forward(self, images):
