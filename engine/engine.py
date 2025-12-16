@@ -115,6 +115,9 @@ class Runner:
         prefix = f"{data_name}_{train_name}"
         print("PREFIX:", prefix)
         print("TOTAL LEN", self.data_manager.num_tasks)
+        output_dir = os.path.join("outputs", prefix)
+        os.makedirs(output_dir, exist_ok=True)
+        self.model.output_dir = output_dir
 
         # Apply hyperparameters if provided
         if hyperparam_dict is not None:
@@ -202,8 +205,6 @@ class Runner:
         # SAVE RESULTS
         # ===========================================
         # Create output directory with prefix name
-        output_dir = os.path.join("outputs", prefix)
-        os.makedirs(output_dir, exist_ok=True)
 
         save_dict = {
             "acc_list": self.acc_list,
