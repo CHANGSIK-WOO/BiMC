@@ -258,12 +258,12 @@ class BiMC(nn.Module):
 
                 vis_dir = 'vis_train' if self.building else 'vis_test'
                 # Save original (denormalized)
-                orig_path, idx = get_unique_path(f"{self.output_dir}/{vis_dir}/origin/{self.task_id}/{label}")
+                orig_path, idx = get_unique_path(f"{self.output_dir}/{self.edge_sigma}/{vis_dir}/origin/{self.task_id}/{label}")
                 if idx < 100:
                     vutils.save_image(denormalize(images[i]).clamp(0, 1), orig_path)
 
                 # Save invariant LoG edge
-                edge_path, idx = get_unique_path(f"{self.output_dir}/{vis_dir}/edge/{self.task_id}/{label}")
+                edge_path, idx = get_unique_path(f"{self.output_dir}/{self.edge_sigma}/{vis_dir}/edge/{self.task_id}/{label}")
                 if idx < 100:
                     vutils.save_image(edge_img[i].clamp(0, 1), edge_path)
         # if not self.meta_training:
