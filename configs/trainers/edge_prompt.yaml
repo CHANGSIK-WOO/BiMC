@@ -35,7 +35,7 @@ TRAINER:
 
     # EDGE specific parameters (fixed hyperparameters, no router)
     EDGE:
-      SIGMA: 2.5          # Fixed Gaussian blur sigma
+      SIGMA: 5.0          # Fixed Gaussian blur sigma
       GAMMA: 0.4          # Fixed edge fusion weight
       KERNEL_TYPE: "laplacian"  # Fixed kernel type
       INFERENCE_EDGE: False  # Extract edge features during inference

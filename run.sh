@@ -34,6 +34,12 @@ python main.py --data_cfg $DATA_CFG \
 # Edge + Prompt
 python main.py --data_cfg $DATA_CFG \
                --train_cfg ./configs/trainers/edge_prompt.yaml \
-               --hyperparam_sweep \
                --prompt \
                --prompt_checkpoint outputs/prompts_latest.pth
+
+# Ablation
+#python main.py --data_cfg $DATA_CFG \
+#               --train_cfg ./configs/trainers/edge_prompt.yaml \
+#               --hyperparam_sweep \
+#               --prompt \
+#               --prompt_checkpoint outputs/prompts_latest.pth
