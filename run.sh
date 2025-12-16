@@ -14,11 +14,11 @@
 DATA_CFG=./configs/datasets/domainnet.yaml
 
 # Base Line
-#python main.py --data_cfg $DATA_CFG \
-#               --train_cfg ./configs/trainers/bimc.yaml
-#
-#python main.py --data_cfg $DATA_CFG \
-#               --train_cfg ./configs/trainers/bimc_ensemble.yaml
+python main.py --data_cfg $DATA_CFG \
+               --train_cfg ./configs/trainers/bimc.yaml
+
+python main.py --data_cfg $DATA_CFG \
+               --train_cfg ./configs/trainers/bimc_ensemble.yaml
 
 # Edge
 python main.py --data_cfg $DATA_CFG \
